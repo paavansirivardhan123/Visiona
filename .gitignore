@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+env/
+.env
+
+# Models
+# *.pt  # Commented out since yolov8n.pt and yolov8s.pt are committed
+# *.pth
+
+# IDEs
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Coverage
+.early.coverage
+.coverage
+.coverage.*
+
+# Python version
+.python-version
+
+# Cache
+.pytest_cache/
+.cache/
+
+# Sample videos - tracked with Git LFS
+# sample-vid/

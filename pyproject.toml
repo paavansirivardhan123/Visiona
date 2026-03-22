@@ -1,0 +1,19 @@
+[project]
+name = "Visiona"
+version = "2.0.0"
+description = "Visiona — Real-time assistive navigation for visually impaired users"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy==1.26.4",
+    "opencv-python==4.9.0.80",
+    "pyttsx3==2.90",
+    "torch==2.2.2",
+    "torchvision==0.17.2",
+    "ultralytics==8.2.0",
+    "python-dotenv",
+    "langchain",
+    "langchain-groq",
+    "speechrecognition>=3.10.0",
+    "pyaudio>=0.2.13",
+]

@@ -1,0 +1,11 @@
+opencv-python==4.9.0.80
+ultralytics==8.2.0
+pyttsx3==2.90
+langchain
+langchain-groq
+python-dotenv
+torch==2.2.2
+torchvision==0.17.2
+numpy==1.26.4
+SpeechRecognition>=3.10.0
+pyaudio>=0.2.13
