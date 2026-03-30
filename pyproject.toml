@@ -10,10 +10,11 @@ dependencies = [
     "pyttsx3==2.90",
     "torch==2.2.2",
     "torchvision==0.17.2",
-    "ultralytics==8.2.0",
+    "ultralytics>=8.3.0",
     "python-dotenv",
     "langchain",
     "langchain-groq",
     "speechrecognition>=3.10.0",
     "pyaudio>=0.2.13",
+    "timm>=1.0.26",
 ]

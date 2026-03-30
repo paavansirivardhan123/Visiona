@@ -1,55 +1,133 @@
-class Config:
-    """Centralized configuration for the navigation system."""
+﻿class Config:
+    """Centralized configuration — single source of truth."""
 
-    # --- Video ---
-    VIDEO_SOURCE = "sample-vid/sample.mp4"
-    IMG_SIZE = 640
+    # ------------------------------------------------------------------ #
+    #  Video Sources
+    #  Use integer index (0,1,2,3) for live cameras.
+    #  Set to None to disable a direction.
+    # ------------------------------------------------------------------ #
+    SOURCES = {
+        "FRONT": "sample-vid/front.mp4",
+        "LEFT":  "sample-vid/left.mp4",
+        "RIGHT": "sample-vid/right.mp4",
+        "BACK":  "sample-vid/back.mp4",
+    }
+
+    # ------------------------------------------------------------------ #
+    #  YOLO
+    # ------------------------------------------------------------------ #
+    MODEL_PATH     = "yolov8n.pt"
+    IMG_SIZE       = 640
     CONF_THRESHOLD = 0.35
-    FRAME_SKIP = 2                  # Process every 2nd frame (was 3)
+    FRAME_SKIP     = 2
 
-    # --- Timing ---
-    SPEECH_COOLDOWN = 2.0
-    LLM_COOLDOWN = 3.5
-    TRACKING_MAX_AGE = 10           # Frames before a tracked object is dropped
+    # ------------------------------------------------------------------ #
+    #  Distance Filtering (metres)
+    # ------------------------------------------------------------------ #
+    MAX_DISTANCE_M  = 3.0
+    CONSIDER_MAX_M  = 1.7
+    HIGH_PRIORITY_M = 1.0
 
-    # --- Distance Estimation (pinhole camera model) ---
-    # Calibrate: measure real object width (cm) and known distance (cm) at known pixel width
-    FOCAL_LENGTH_PX = 700           # Approximate for 640px wide frame, standard webcam
-    AVG_PERSON_WIDTH_CM = 50
+    # ------------------------------------------------------------------ #
+    #  Heuristic fallback (used when MiDaS unavailable)
+    # ------------------------------------------------------------------ #
+    FOCAL_LENGTH_PX     = 700
     AVG_OBJECT_WIDTH_CM = 30
+    KNOWN_WIDTHS_CM = {
+        "person": 50, "car": 180, "truck": 250, "bus": 250,
+        "bicycle": 60, "motorcycle": 80, "dog": 40, "cat": 25,
+        "bottle": 8, "chair": 50, "cup": 8, "laptop": 35,
+        "backpack": 35, "book": 20, "dining table": 80,
+    }
 
-    # --- Distance Zones (cm) ---
-    DIST_CRITICAL = 80              # < 80cm  → STOP immediately
-    DIST_NEAR = 150                 # < 150cm → slow down / avoid
-    DIST_MEDIUM = 300               # < 300cm → heads-up warning
+    # ------------------------------------------------------------------ #
+    #  Object Grouping
+    # ------------------------------------------------------------------ #
+    GROUP_THRESHOLD = 5
 
-    # --- Legacy area thresholds (kept for fallback) ---
-    AREA_VERY_CLOSE = 80000
-    AREA_NEAR = 30000
+    # ------------------------------------------------------------------ #
+    #  Priority weights
+    # ------------------------------------------------------------------ #
+    OBJECT_PRIORITY = {
+        "person": 10, "child": 10,
+        "car": 9, "truck": 9, "bus": 9, "motorcycle": 8, "bicycle": 7,
+        "dog": 6, "cat": 5,
+        "chair": 3, "dining table": 3, "bottle": 2, "cup": 2,
+    }
+    DEFAULT_PRIORITY = 1
 
-    # --- Spatial Grid (5 zones across frame width) ---
-    ZONES = ["far-left", "left", "ahead", "right", "far-right"]
+    # ------------------------------------------------------------------ #
+    #  Alert beep levels  (distance_m, freq_hz, duration_ms)
+    # ------------------------------------------------------------------ #
+    BEEP_LEVELS = [
+        (0.5,  2000, 80),
+        (1.0,  1500, 100),
+        (1.5,  1000, 120),
+    ]
 
-    # --- UI ---
-    WINDOW_NAME = "NaVision AI — Assistive Navigator"
-    DISPLAY_WIDTH = 800
-    DISPLAY_HEIGHT = 600
-    HUD_HEIGHT = 100
+    # ------------------------------------------------------------------ #
+    #  Speech
+    # ------------------------------------------------------------------ #
+    SPEECH_RATE     = 185
+    SPEECH_COOLDOWN = 2.5
+    MAX_MESSAGES    = 3
 
-    # --- Audio Spatial Cues ---
-    AUDIO_CUES_ENABLED = True
-    BEEP_FREQ_LEFT = 440            # Hz
-    BEEP_FREQ_RIGHT = 880           # Hz
-    BEEP_DURATION_MS = 120
+    # ------------------------------------------------------------------ #
+    #  UI
+    # ------------------------------------------------------------------ #
+    WINDOW_NAME = "Visiona AI"
+    DISPLAY_W   = 640
+    DISPLAY_H   = 480
+    HUD_H       = 90
 
-    # --- Logging ---
+    # ------------------------------------------------------------------ #
+    #  Logging
+    # ------------------------------------------------------------------ #
     LOG_ENABLED = True
-    LOG_DIR = "logs"
+    LOG_DIR     = "logs"
 
-    # --- LLM ---
-    LLM_MODEL = "llama3-70b-8192"
+    # ------------------------------------------------------------------ #
+    #  LLM (optional)
+    # ------------------------------------------------------------------ #
+    LLM_MODEL       = "llama3-70b-8192"
     LLM_TEMPERATURE = 0
+    LLM_COOLDOWN    = 5.0
 
-    # --- Hazard labels (priority objects) ---
-    HAZARD_LABELS = {"car", "truck", "bus", "motorcycle", "bicycle", "person", "dog", "stairs"}
-    TARGET_LABELS = {"bottle", "chair", "cup", "laptop", "phone", "book", "backpack"}
+    # ------------------------------------------------------------------ #
+    #  Monocular Depth (MiDaS)
+    # ------------------------------------------------------------------ #
+    MIDAS_MODEL_TYPE    = "MiDaS_small"
+    MIDAS_DEFAULT_SCALE = 1.0
+    DEPTH_SMOOTH_FRAMES = 5
+
+    # ------------------------------------------------------------------ #
+    #  Kalman Filter
+    # ------------------------------------------------------------------ #
+    DEPTH_SPIKE_THRESHOLD = 1.5
+    KF_PROCESS_NOISE      = 0.01
+    KF_MEASUREMENT_NOISE  = 0.1
+
+    # ------------------------------------------------------------------ #
+    #  Object Tracking
+    # ------------------------------------------------------------------ #
+    TRACK_HISTORY_LEN = 30
+    TRACK_MAX_AGE     = 10
+    TRACKER_BACKEND   = "bytetrack"
+
+    # ------------------------------------------------------------------ #
+    #  Speed Estimation
+    # ------------------------------------------------------------------ #
+    SPEED_MIN_THRESHOLD  = 0.2
+    LATERAL_THRESHOLD_PX = 20
+    SPEED_SMOOTH_FRAMES  = 5
+
+    # ------------------------------------------------------------------ #
+    #  Time-To-Collision
+    # ------------------------------------------------------------------ #
+    TTC_SMOOTH_ALPHA   = 0.3
+    TTC_WARN_THRESHOLD = 3.0
+
+    # ------------------------------------------------------------------ #
+    #  Performance
+    # ------------------------------------------------------------------ #
+    FRAME_BUDGET_MS = 2000  # MiDaS on CPU needs up to 200ms, YOLO ~100ms
