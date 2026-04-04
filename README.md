@@ -1,356 +1,251 @@
-<div align="center">
+# Visiona AI — Intelligent Assistive Navigation System
 
-# 🦯 Visiona AI
+## Overview
 
-### Real-time Assistive Vision System for Blind Users
+Visiona is a real-time, multi-camera computer vision system designed to empower visually impaired users with intelligent spatial awareness. Combining YOLO object detection, depth estimation, motion tracking, and LangChain-powered AI reasoning, Visiona transforms raw visual data into conversational guidance delivered through text-to-speech.
 
-*Four-camera spatial awareness · MiDaS depth estimation · Voice guidance · Priority alerts*
+The system processes synchronized multi-camera feeds, detects objects, calculates distance and collision risk, and communicates findings through intelligible audio alerts and natural language responses.
 
-![Python](https://img.shields.io/badge/Python-3.11+-blue?style=flat-square&logo=python)
-![YOLOv8](https://img.shields.io/badge/YOLOv8n-Ultralytics-purple?style=flat-square)
-![MiDaS](https://img.shields.io/badge/MiDaS-Intel-orange?style=flat-square)
-![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)
+## Demo / Output
 
-</div>
+*Real-time video stream processing at 30+ FPS with synchronized 4-camera multi-view display grid, proximity-based audio alerts, and voice-interactive guidance system.*
 
----
+## Features
 
-## What Is Visiona?
+- **Multi-Camera Processing**: Synchronous capture from up to 4 directional camera feeds (Front, Left, Right, Back) with dynamic grid-based UI
+- **Fast Object Detection**: YOLO v8 Nano model running on downscaled frames (~50ms per frame)
+- **Monocular Depth Estimation**: Depth-Anything-V2-Small model via HuggingFace Transformers with step-based distance calculation (1 step ≈ 0.75m)
+- **Object Tracking**: ByteTrack-based persistent tracking across frames with motion classification (approaching, moving away, lateral, stationary)
+- **Time-To-Collision (TTC)**: Real-time collision risk computation for approaching objects
+- **Priority-Based Grouping**: Intelligent object grouping with threat scoring and semantic description generation
+- **Multi-Level Alerts**: Proximity-based beeping and high-priority spoken warnings
+- **Voice-Interactive Agent**: LangChain + Groq LLM-powered agent for scene queries, memory retrieval, and target seeking
+- **Session Logging**: JSONL-formatted structured logging of all detections and events
+- **Docker Containerization**: Cross-platform deployment with all system dependencies pre-configured
+- **Asynchronous Architecture**: Non-blocking depth pipeline ensures smooth real-time performance
 
-Visiona is a real-time object detection and spatial awareness system built for blind users. It processes up to four directional camera feeds simultaneously, detects nearby objects, estimates their distance using monocular depth estimation, and delivers clear spoken audio guidance — all without any keyboard interaction required.
+## Tech Stack
 
-The user simply listens. Visiona speaks.
+### Core Libraries
+- **Python 3.11+**: Primary programming language
+- **OpenCV 4.9.0**: Video capture and frame processing
+- **YOLOv8 (Ultralytics)**: Object detection and classification
+- **Transformers 5.5.0**: Depth-Anything-V2-Small depth estimation
+- **PyTorch 2.4.0+**: Deep learning inference backend
 
----
+### AI & Reasoning
+- **LangChain**: Conversational AI framework
+- **Groq API**: LLM backbone (Llama 3.3 70B Versatile)
+- **Python-dotenv**: Environment variable management
 
-## How It Works
+### Audio
+- **PyTTSX3 2.90**: Text-to-speech synthesis
+- **SpeechRecognition 3.10+**: Voice input capture
+- **PyAudio 0.2.13**: Audio device interface
 
-```
-4 Camera Feeds (FRONT / LEFT / RIGHT / BACK)
-        │
-        ▼
-  YOLO Detection (1280px, ~50ms)
-        │
-        ▼
-  MiDaS Depth Estimation (async background thread)
-        │  scale = real_distance × D_ref
-        │  depth = scale / midas_value
-        ▼
-  Distance Filter (only ≤ 1.7m described, ≤ 1.0m = HIGH PRIORITY)
-        │
-        ▼
-  ByteTrack Object Tracking (persistent IDs across frames)
-        │
-        ▼
-  Speed + Motion Classification (approaching / moving away / lateral)
-        │
-        ▼
-  TTC — Time To Collision (distance / speed)
-        │
-        ▼
-  Priority Queue (TTC → distance → object type)
-        │
-        ▼
-  Object Grouping + Speech Messages
-        │  "3 people in front at 1.4 meters"
-        │  "Group of people on the left"
-        │  "Warning: Person very close in front"
-        ▼
-  TTS Audio Output + Beep Alerts
-```
+### DevOps
+- **Docker**: Full containerization with system dependencies
+- **Docker Compose**: Multi-service orchestration
 
----
+### Data & Logging
+- **NumPy 1.26.4**: Numerical operations and array processing
+- **TIMM 1.0.26**: Vision transformer utilities
 
 ## Project Structure
 
 ```
-visiona/
-├── main.py                    # App entry point, camera feeds, main loop
+Visiona/
+├── main.py                           # Application entry point and main loop
+├── pyproject.toml                    # Project metadata and dependencies
+├── requirements.txt                  # Pip dependency listing
+├── yolov8n.pt                        # YOLO v8 Nano model weights
+│
+├── agents/
+│   ├── orchestrator.py               # LangChain agent reasoning engine
+│   └── tools/
+│       └── vision_tools.py           # Vision query tools and intent handlers
+│
 ├── core/
-│   └── config.py              # All tunable settings
-├── engines/
-│   ├── vision.py              # YOLO + async MiDaS pipeline
-│   ├── depth.py               # Depth engine interface
-│   ├── mono_depth.py          # MiDaS monocular depth + calibration
-│   ├── tracker.py             # ByteTrack IoU object tracker
-│   ├── speed.py               # Speed estimation + motion classification
-│   ├── ttc.py                 # Time-To-Collision calculator
-│   ├── kalman.py              # Per-track Kalman filter (noise reduction)
-│   ├── grouping.py            # Object grouping + speech message builder
-│   ├── alert.py               # Proximity beep alerts
-│   ├── speech.py              # Priority TTS queue
-│   ├── voice_input.py         # Background mic listener
-│   └── logger.py              # JSONL session logging
-├── models/
-│   ├── detection.py           # Detection dataclass
-│   └── priority_queue.py      # Max-heap priority queue (DSA)
-├── sample-vid/                # Test video files
-│   ├── front.mp4
-│   ├── left.mp4
-│   ├── right.mp4
-│   └── back.mp4
-├── yolov8n.pt                 # YOLO model weights
-├── pyproject.toml
-└── .env                       # API keys (optional)
+│   ├── config.py                     # Centralized configuration and constants
+│   ├── detection.py                  # Detection dataclass with spatial metadata
+│   ├── logger.py                     # JSONL session logging system
+│   ├── memory.py                     # Agent memory bank for historical detections
+│   └── priority_queue.py             # Max-heap priority queue for threat scoring
+│
+├── perception/
+│   ├── vision.py                     # YOLO detection pipeline + async depth
+│   ├── mono_depth.py                 # Monocular depth estimation (Depth-Anything)
+│   └── tracker.py                    # Object tracking with motion analysis
+│
+├── kinematics/
+│   ├── speed.py                      # Speed estimation from tracking
+│   ├── ttc.py                        # Time-to-collision calculation
+│   ├── kalman.py                     # Kalman filter for smoothing trajectories
+│   └── heatmap.py                    # Threat heatmap and object grouping
+│
+├── audio/
+│   ├── speech.py                     # Priority-based TTS engine
+│   ├── alert.py                      # Proximity-based beep alerts
+│   └── voice_input.py                # Background microphone listener
+│
+├── services/
+│   ├── google_maps.py                # Google Maps integration (future)
+│   └── vector_db.py                  # Vector database for semantic search
+│
+├── docker/
+│   ├── Dockerfile                    # Linux environment with all dependencies
+│   └── docker-compose.yml            # Multi-service orchestration
+│
+├── sample-vid/                       # Test video samples
+└── logs/                             # Session logs (JSONL format)
 ```
-
----
-
-## Quick Start
-
-**1. Install dependencies**
-
-```bash
-uv sync
-```
-
-**2. Run**
-
-```bash
-uv run main.py
-```
-
-On first run, MiDaS downloads ~100MB of model weights (cached after that). The system starts speaking within a few seconds.
-
-**3. Use live cameras instead of video files**
-
-Edit `core/config.py`:
-
-```python
-SOURCES = {
-    "FRONT": 0,   # webcam index
-    "LEFT":  1,
-    "RIGHT": 2,
-    "BACK":  None,   # disabled
-}
-```
-
----
 
 ## Installation
 
-All dependencies managed with `uv`.
+### Prerequisites
+- Python 3.11 or higher
+- pip or UV package manager
+- (Optional) NVIDIA GPU with CUDA for faster inference
 
+### Local Installation
+
+1. **Clone the Repository**
+   ```bash
+   git clone https://github.com/yourusername/Visiona.git
+   cd Visiona
+   ```
+
+2. **Create Virtual Environment**
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate  # On Windows: .venv\Scripts\Activate.ps1
+   ```
+
+3. **Install Dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. **Set Up Environment Variables** (Optional for LangChain Agent)
+   ```bash
+   cp .env.example .env
+   # Edit .env and add:
+   # GROQ_API_KEY=your_groq_api_key
+   # MAPS_API_KEY=your_google_maps_api_key (optional)
+   ```
+
+### Docker Installation
+
+1. **Build Docker Image**
+   ```bash
+   docker-compose -f docker/docker-compose.yml build
+   ```
+
+2. **Run Container**
+   ```bash
+   docker-compose -f docker/docker-compose.yml up
+   ```
+
+## Usage
+
+### Running the Application
+
+**Local Execution:**
 ```bash
-# Install uv
-pip install uv
-
-# Install all project dependencies
-uv sync
-
-# Add a new package
-uv add package-name
+python main.py
 ```
 
-| Package | Version | Purpose |
-|---|---|---|
-| ultralytics | ≥8.3.0 | YOLOv8n object detection |
-| opencv-python | 4.9.0.80 | Video capture + rendering |
-| torch | 2.2.2 | Deep learning backend (YOLO + MiDaS) |
-| torchvision | 0.17.2 | Image transforms |
-| timm | ≥1.0.26 | MiDaS model backbone |
-| pyttsx3 | 2.90 | Offline text-to-speech |
-| SpeechRecognition | ≥3.10.0 | Voice command input |
-| pyaudio | ≥0.2.13 | Microphone access |
-| numpy | 1.26.4 | Numerical operations |
-
-> Windows note: if `pyaudio` fails, run `pip install pipwin && pipwin install pyaudio`
-
----
-
-## Voice Commands
-
-Visiona listens continuously in the background. No button press needed.
-
-| Say this | What happens |
-|---|---|
-| `"find chair"` | Searches for a chair, guides toward it |
-| `"find person"` | Searches for a person |
-| `"find door"` | Searches for a door |
-| `"find stairs"` | Searches for stairs |
-| `"walk forward"` | Returns to general navigation mode |
-| `"what is around"` | Announces everything currently detected |
-| `"describe"` | Same as above |
-| `"where is the car?"` | Answers based on current scene |
-| Any 3+ word question | Routed to scene description |
-
----
-
-## Keyboard Controls
-
-For developers and sighted operators.
-
-| Key | Action |
-|---|---|
-| `H` | Announce current scene |
-| `ESC` | Quit |
-
----
-
-## Audio Output Examples
-
-| Situation | What you hear |
-|---|---|
-| 6 people detected in front | "Group of people in front at 1.5 meters" |
-| 3 people on the left | "3 people on the left at 1.2 meters" |
-| Person within 1 meter | Beep + "Person very close in front, 0.8 meters" |
-| Person walking toward you | "Person approaching in front at 1.2 m/s" |
-| TTC under 3 seconds | "Warning: Person approaching in front at 1.4 m/s" |
-| Object moving away | "a car in front at 1.6 meters, moving away" |
-
----
-
-## Distance Zones
-
-| Zone | Range | Behaviour |
-|---|---|---|
-| High Priority | ≤ 1.0 m | Beep alert + immediate voice warning |
-| Describe | ≤ 1.7 m | Included in speech output |
-| Ignore | > 3.0 m | Filtered out entirely |
-
----
-
-## HUD Display
-
-Each camera window shows:
-
-- State badge — `SCANNING` / `ALERT` / `AVOIDING` / `GUIDING`
-- Last spoken message
-- Bounding boxes colored by distance:
-  - 🔴 Red — high priority (≤ 1.0m)
-  - 🟠 Orange — near (≤ 2.0m)
-  -  Green — within range
-- Confidence bar under each box
-- TTC warning ring (red circle) when collision imminent
-- Object count + calibration status
-- Direction label (FRONT / LEFT / RIGHT / BACK)
-- Mic indicator dot (green = listening)
-
----
-
-## Configuration
-
-All settings in `core/config.py`.
-
-```python
-# Distance thresholds
-MAX_DISTANCE_M  = 3.0    # ignore beyond this
-CONSIDER_MAX_M  = 1.7    # only describe within this
-HIGH_PRIORITY_M = 1.0    # triggers beep + priority alert
-
-# Performance
-FRAME_SKIP      = 2      # process every Nth frame
-FRAME_BUDGET_MS = 2000   # max ms before skipping depth
-
-# Speech
-SPEECH_COOLDOWN = 2.5    # seconds between announcements
-MAX_MESSAGES    = 3      # max messages per cycle
-
-# Depth
-MIDAS_MODEL_TYPE = "MiDaS_small"   # lightweight, CPU-friendly
-
-# Tracking
-TRACKER_BACKEND  = "bytetrack"
-TRACK_MAX_AGE    = 10              # frames before stale track removed
-
-# TTC
-TTC_WARN_THRESHOLD = 3.0           # seconds — prepend "Warning:"
+**Docker Execution:**
+```bash
+docker-compose -f docker/docker-compose.yml up
 ```
 
----
+### Configuration
 
-## Depth Estimation
+Edit `core/config.py` to customize:
+- **Video sources**: `SOURCES` dictionary (file paths or camera indices 0, 1, 2, 3)
+- **Detection thresholds**: `CONF_THRESHOLD`, `FRAME_SKIP`
+- **Distance filtering**: `MAX_DISTANCE_M`, `CONSIDER_MAX_M`, `HIGH_PRIORITY_M`
+- **Object priorities**: `OBJECT_PRIORITY` dictionary
+- **Speech settings**: `SPEECH_RATE`, `SPEECH_COOLDOWN`, `SEMANTIC_COOLDOWN`
+- **Alert beep levels**: `BEEP_LEVELS` tuples (distance_m, freq_hz, duration_ms)
 
-Visiona uses **MiDaS** (Intel) for monocular depth estimation — no stereo camera or LiDAR required.
+### Voice Interaction
 
-MiDaS outputs inverse depth (higher value = closer object). The correct formula is:
+Once running, the system listens for voice commands:
+- *"Where did I put my coffee cup?"* → Queries memory for past detections
+- *"What is in front of me?"* → Summarizes current scene
+- *"Find me a chair"* → Sets search intent and navigates to target
+- Regular queries are answered based on real-time YOLO detections
 
-```
-metric_depth_m = scale / midas_value
-```
+### Output Format
 
-Scale is auto-calibrated on first frame using detected reference objects:
-
-```
-scale = real_distance_m × D_ref
-```
-
-Where `D_ref` is the MiDaS value inside the object's bounding box and `real_distance_m` is estimated from the object's known real-world width using the pinhole camera model.
-
-**Limitations:**
-- Accuracy depends on calibration quality
-- Lighting conditions affect MiDaS output
-- Cannot guarantee centimetre-level precision
-- First run requires internet to download model weights (~100MB, cached)
-
----
-
-## Priority Queue (DSA)
-
-Detections are sorted by a max-heap priority queue with three factors:
-
-1. **TTC** — lower time-to-collision = highest urgency (`1000 / ttc_sec`)
-2. **Distance** — closer objects score higher
-3. **Object type** — `person > car > bicycle > dog > chair > bottle`
-
-This ensures the most dangerous object is always announced first.
-
----
-
-## Session Logs
-
-Every session is saved to `logs/session_YYYYMMDD_HHMMSS.jsonl`.
-
+**Session Logs** (`logs/session_YYYYMMDD_HHMMSS.jsonl`):
+Each line contains a JSON detection record:
 ```json
-{"event": "detection", "direction": "FRONT", "objects": [
-  {"object": "person", "direction": "FRONT", "mode": "monocular",
-   "distance_m": 1.4, "speed_mps": 0.8, "motion": "approaching",
-   "ttc_sec": 1.8, "priority": "high"}
-], "t": 4.21}
-{"event": "speech", "messages": ["Warning: Person approaching in front at 0.8 m/s"], "t": 4.22}
+{
+  "timestamp": "2026-04-04T19:54:47.123",
+  "direction": "FRONT",
+  "label": "person",
+  "confidence": 0.92,
+  "distance_m": 2.3,
+  "speed_mps": 0.5,
+  "motion": "approaching",
+  "ttc_sec": 4.6,
+  "track_id": 5,
+  "threat_score": 45.3
+}
 ```
 
-Useful for debugging, tuning thresholds, and future model training.
+## How It Works
 
----
+### Processing Pipeline
 
-## Roadmap
+1. **Frame Capture**: Four camera feeds are synchronized and captured at the start of each main loop cycle
+2. **YOLO Detection**: Frames are downscaled to 1280px width and processed by YOLO v8 Nano (~50ms)
+3. **Async Depth**: Background thread runs Depth-Anything-V2 inference without blocking display (~300ms, results cached)
+4. **Distance Calculation**: Raw depth values are scaled to real-world meters using reference calibration
+5. **Tracking**: ByteTrack maintains persistent object identities across frames
+6. **Motion Analysis**: Speed and motion direction calculated from tracking trajectories
+7. **TTC Computation**: For approaching objects, time-to-collision computed as distance / speed
+8. **Priority Scoring**: Objects ranked by TTC, distance, and threat category
+9. **Grouping**: Nearby objects merged into semantic groups (e.g., "group of people")
+10. **Speech Generation**: Groups converted to natural language descriptions
+11. **Audio Output**: TTS renders descriptions with priority-based queue; proximity alerts beep
+12. **Agent Query** (Optional): Voice commands routed to LangChain agent for reasoning
 
-- [x] YOLOv8n real-time detection (4 camera feeds)
-- [x] MiDaS monocular depth estimation
-- [x] Auto scale calibration from reference objects
-- [x] ByteTrack object tracking
-- [x] Speed + motion classification
-- [x] Time-To-Collision calculation
-- [x] Kalman filter noise reduction
-- [x] Priority queue (TTC → distance → object type)
-- [x] Object grouping ("Group of people", "3 chairs")
-- [x] Priority TTS queue with stale-message dropping
-- [x] Beep alerts scaled by proximity
-- [x] Voice commands (hands-free)
-- [x] Session logging (JSONL)
-- [x] Async MiDaS (non-blocking display)
-- [ ] GPS turn-by-turn navigation
-- [ ] Landmark recognition
-- [ ] Offline LLM fallback (Ollama)
-- [ ] Mobile app wrapper
-- [ ] Wearable camera support
+### Key Architecture Decisions
 
----
+- **Asynchronous Depth**: Depth inference runs in background thread to prevent frame rate degradation
+- **Frame Downscaling**: YOLO processes downscaled frames for speed (1280px vs. 4K)
+- **Step-Based Distance**: Distances converted to "steps" (0.75m each) for user comprehension
+- **Priority Queue**: Threat-score-based heap ensures critical alerts delivered first
+- **Synthetic Depth Fallback**: Heuristic depth calculation (focal length + object width) as fallback
+- **Kalman Smoothing**: Per-object Kalman filters reduce noise in tracking and depth estimates
+
+### Agentic Features (Phase 6)
+
+The integrated LangChain agent provides advanced capabilities:
+- **Memory Retrieval**: "Where did I leave my..."
+- **Scene Summarization**: Natural language descriptions of complex environments
+- **Spatial Reasoning**: "What is on the table?"
+- **Contextual Curiosity**: Proactive guidance for navigation anchors
+- **Search Intent**: User-defined target seeking with active guidance
+- **Route Planning**: Integration with Google Maps for turn-by-turn navigation (future)
+
+## Future Improvements
+
+- **Stereo Depth**: Add binocular depth from dual cameras for improved accuracy
+- **3D Scene Reconstruction**: Build persistent 3D maps of environments
+- **Multi-Modal Learning**: Combine depth, motion, and semantic context for stronger predictions
+- **Adaptive Beep Patterns**: Spatial audio via directional beeping or bone-conduction audio
+- **Turn-by-Turn Navigation**: Full GPS + visual navigation integration
+- **Fine-Tuned LLM**: Domain-specific model trained on spatial reasoning tasks
+- **Real-time Performance Optimization**: GPU acceleration and model quantization
+- **Outdoor Robustness**: Adapt detection and depth for sunlight variations
+- **User Feedback Loop**: Active learning from user corrections
 
 ## Author
 
-Paavan Siri Vardhan Narava  
-naravapaavansirivardhan@gmail.com
-
----
-
-## License
-
-MIT — free to use, modify, and build on.
-
----
-
-<div align="center">
-Built to make the world navigable for everyone.
-</div>
+Author: Paavan Siri Vardhan Narava
+Email: naravapaavansirivardhan@gmail.com

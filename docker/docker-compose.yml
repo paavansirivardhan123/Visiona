@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  visiona:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: visiona_core
+    # -------------------------------------------------------------
+    # DEVICE PASSTHROUGH (Linux hosts)
+    # -------------------------------------------------------------
+    # Uncomment the following lines if you are running on native Linux
+    # to pass your webcam and sound card to the container.
+    # Note: On Windows (Docker Desktop/WSL2), device passthrough for 
+    # webcams and audio is complex and might not work out of the box.
+    # devices:
+      # - /dev/video0:/dev/video0  # Front camera
+      # - /dev/video1:/dev/video1  # Left camera
+      # - /dev/snd:/dev/snd        # Audio card for PyAudio/TTS
+    
+    # -------------------------------------------------------------
+    # GUI PASSTHROUGH (Linux hosts / WSLg)
+    # -------------------------------------------------------------
+    # Required for cv2.imshow to render the HUD.
+    environment:
+      - DISPLAY=${DISPLAY:-:0}
+    volumes:
+      - ..:/app  # Live reload code changes
+      # - /tmp/.X11-unix:/tmp/.X11-unix  # X11 Socket for UI rendering
+    
+    # Optional GPU support if you install nvidia-container-toolkit
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
