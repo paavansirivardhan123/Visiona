@@ -1,172 +1,144 @@
 """
-VoiceInputEngine — Push-To-Talk (PTT) mode.
+VoiceInputEngine — Dynamic Natural Language Capture with PTT.
 
-Continuous listening is disabled. The mic only opens when triggered
-externally via trigger_ptt(). In main.py, pressing 'V' calls trigger_ptt().
-
-Recording window: 6 seconds max, stops early on silence.
+Supports explicit start/stop recording for 'Hold-to-Talk' (V key).
 """
 import threading
 import time
+import io
+import wave
 from typing import Callable, Optional
 
 try:
     import speech_recognition as sr
-    _SR = True
+    import pyaudio
+    _READY = True
 except ImportError:
-    _SR = False
-
-VOICE_INTENTS = {
-    "walk": "walk forward", "go forward": "walk forward",
-    "move forward": "walk forward", "forward": "walk forward",
-    "straight": "walk forward",
-    "find bottle": "bottle", "bottle": "bottle",
-    "find chair": "chair", "chair": "chair",
-    "find person": "person", "person": "person",
-    "find car": "car", "car": "car",
-    "find door": "door", "door": "door",
-    "find stairs": "stairs", "stairs": "stairs",
-    "find laptop": "laptop", "laptop": "laptop",
-    "find bag": "backpack", "backpack": "backpack",
-    "find table": "dining table", "table": "dining table",
-}
-
-SCENE_PHRASES = {
-    "what is around", "what around", "describe", "what do you see",
-    "surroundings", "scene", "look around",
-}
-
-QUESTION_WORDS = {"where", "how", "is there", "can i", "should i", "help"}
-
-_PTT_WINDOW_SEC = 6   # max recording time per press
-
+    _READY = False
 
 class VoiceInputEngine:
 
-    def __init__(self, on_intent, on_scene_request, on_question, on_listening=None):
-        self.on_intent        = on_intent
-        self.on_scene_request = on_scene_request
-        self.on_question      = on_question
+    def __init__(self, on_speech, on_listening=None):
+        self.on_speech        = on_speech
         self.on_listening     = on_listening or (lambda _: None)
 
-        self._cooldown  = 1.5
+        self._cooldown  = 0.3
         self._last_cmd  = 0.0
-        self._ptt_lock  = threading.Lock()   # prevent double-trigger
         self._active    = False              # True while recording
-        self.mic        = None
-        self.recognizer = None
-        self.ready      = False
-        self._setup()
+        self._recording = False              # True while stream is active
+        self._frames    = []
+        self.ready      = _READY
+        self._pa        = pyaudio.PyAudio() if _READY else None
+        self._stream    = None
+        self._lock      = threading.Lock()
+        
+        if _READY:
+            self._start_background_stream()
+            print(f"  [Voice] Mic ready. Low-latency PTT (V key) Active.")
 
-    def _setup(self):
-        if not _SR:
-            print("  [Voice] speech_recognition not installed. Run: uv add SpeechRecognition pyaudio")
-            return
+    def _start_background_stream(self):
+        """Pre-warms the microphone stream to eliminate activation lag."""
         try:
-            mic_list = sr.Microphone.list_microphone_names()
-            if not mic_list:
-                print("  [Voice] No microphones found.")
-                return
-            print(f"  [Voice] Found {len(mic_list)} microphone(s):")
-            for i, n in enumerate(mic_list):
-                print(f"           [{i}] {n}")
+            self._stream = self._pa.open(
+                format=pyaudio.paInt16,
+                channels=1,
+                rate=16000,
+                input=True,
+                frames_per_buffer=1024,
+                start=True
+            )
+            self._recording = True
+            threading.Thread(target=self._capture_loop, daemon=True).start()
         except Exception as e:
-            print(f"  [Voice] Could not list mics: {e}")
+            print(f"  [Voice] Failed to pre-warm mic: {e}")
+            self.ready = False
+
+    def start_recording(self):
+        """Instantly starts saving frames for processing."""
+        if not self.ready or self._active:
             return
+        
+        with self._lock:
+            self._active = True
+            self._frames = []
+        
+        self.on_listening(True)
+        print("  [Voice] 🎤 Listening (Zero-lag)...")
 
-        self.recognizer = sr.Recognizer()
-        self.recognizer.energy_threshold = 300
-        self.recognizer.dynamic_energy_threshold = True
-        self.recognizer.pause_threshold = 0.8
+    def _capture_loop(self):
+        """Continuously reads from the mic but only saves when _active is True."""
+        while self._recording:
+            try:
+                data = self._stream.read(1024, exception_on_overflow=False)
+                if self._active:
+                    with self._lock:
+                        self._frames.append(data)
+            except Exception as e:
+                if self._recording:
+                    print(f"  [Voice] Capture loop error: {e}")
+                break
 
+    def stop_recording(self):
+        """Stops capturing and processes the buffer."""
+        if not self._active:
+            return
+        
+        with self._lock:
+            self._active = False
+            captured_frames = self._frames.copy()
+            self._frames = []
+            
+        self.on_listening(False)
+        print("  [Voice] Processing speech...")
+        
+        if captured_frames:
+            threading.Thread(target=self._process_buffer, args=(captured_frames,), daemon=True).start()
+
+    def _process_buffer(self, frames):
         try:
-            from core.config import Config
-            idx = getattr(Config, "MIC_DEVICE_INDEX", None)
-            self.mic = sr.Microphone(device_index=idx) if idx is not None else sr.Microphone()
-            print("  [Voice] Calibrating for ambient noise (1 sec)...")
-            with self.mic as src:
-                self.recognizer.adjust_for_ambient_noise(src, duration=1)
-            print(f"  [Voice] Mic ready. Threshold: {int(self.recognizer.energy_threshold)}")
-            self.ready = True
+            raw_data = b"".join(frames)
+            with io.BytesIO() as wav_io:
+                with wave.open(wav_io, "wb") as wf:
+                    wf.setnchannels(1)
+                    wf.setsampwidth(self._pa.get_sample_size(pyaudio.paInt16))
+                    wf.setframerate(16000)
+                    wf.writeframes(raw_data)
+                
+                wav_io.seek(0)
+                recognizer = sr.Recognizer()
+                with sr.AudioFile(wav_io) as source:
+                    audio = recognizer.record(source)
+                    
+            text = recognizer.recognize_google(audio).lower().strip()
+            if text:
+                print(f"  [Voice] Heard: \"{text}\"")
+                self._dispatch(text)
+        except sr.UnknownValueError:
+            pass
         except Exception as e:
-            print(f"  [Voice] Mic error: {e}")
-
-    def start(self):
-        """PTT mode — no background loop. Just confirms readiness."""
-        if not self.ready:
-            print("  [Voice] Voice input unavailable.")
-            return
-        print("  [Voice] PTT mode active. Press V to speak.")
+            print(f"  [Voice] Process Error: {e}")
 
     def stop(self):
-        pass   # nothing to stop in PTT mode
+        self._recording = False
+        if self._stream:
+            try:
+                self._stream.stop_stream()
+                self._stream.close()
+            except: pass
+        if self._pa:
+            try:
+                self._pa.terminate()
+            except: pass
 
-    def trigger_ptt(self):
-        """
-        Called when user presses V. Opens mic for up to _PTT_WINDOW_SEC seconds.
-        Runs in a background thread so it never blocks the display loop.
-        """
-        if not self.ready:
-            return
-        with self._ptt_lock:
-            if self._active:
-                return   # already recording
-            self._active = True
-
-        threading.Thread(target=self._record_and_process, daemon=True).start()
-
-    def _record_and_process(self):
-        try:
-            self.on_listening(True)
-            print("  [Voice] 🎤 Listening... (up to 6 sec, release when done)")
-            with self.mic as src:
-                audio = self.recognizer.listen(
-                    src,
-                    timeout=1,                    # wait up to 1s for speech to start
-                    phrase_time_limit=_PTT_WINDOW_SEC
-                )
-            self.on_listening(False)
-            print("  [Voice] Processing...")
-            self._process(audio)
-        except sr.WaitTimeoutError:
-            print("  [Voice] No speech detected.")
-            self.on_listening(False)
-        except Exception as e:
-            print(f"  [Voice] Error: {e}")
-            self.on_listening(False)
-        finally:
-            with self._ptt_lock:
-                self._active = False
-
-    def _process(self, audio):
-        try:
-            text = self.recognizer.recognize_google(audio).lower().strip()
-            print(f"  [Voice] Heard: \"{text}\"")
-        except sr.UnknownValueError:
-            print("  [Voice] Could not understand speech.")
-            return
-        except sr.RequestError as e:
-            print(f"  [Voice] API error (check internet): {e}")
-            return
-
+    def _dispatch(self, text):
         now = time.time()
         if now - self._last_cmd < self._cooldown:
             return
         self._last_cmd = now
-        self._dispatch(text)
+        self.on_speech(text)
 
-    def _dispatch(self, text):
-        if any(p in text for p in SCENE_PHRASES):
-            self.on_scene_request()
-            return
-        for phrase in sorted(VOICE_INTENTS, key=len, reverse=True):
-            if phrase in text:
-                self.on_intent(VOICE_INTENTS[phrase])
-                return
-        if any(text.startswith(w) for w in QUESTION_WORDS) or "?" in text:
-            self.on_question(text)
-            return
-        if len(text.split()) >= 3:
-            self.on_question(text)
-            return
-        print(f"  [Voice] Not recognized: \"{text}\"")
+    def start(self): pass
+    def trigger_ptt(self): pass
+
+
+

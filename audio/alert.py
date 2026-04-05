@@ -21,13 +21,28 @@ class AlertSystem:
     def __init__(self):
         self._last_beep = 0.0
         self._min_interval = 0.3   # seconds between beeps
+        self._paused = False
+
+    def pause(self):
+        self._paused = True
+
+    def resume(self):
+        self._paused = False
 
     def process(self, detections: List[Detection]):
         if not _WINSOUND or not detections:
             return
+            
         hp = [d for d in detections if d.is_high_priority and d.distance_m is not None]
-        if not hp:
+        
+        # If paused (user speaking), only allow high priority threats
+        if self._paused and not hp:
             return
+            
+        if not hp:
+            # Normal mode, no high priority detections
+            return
+            
         closest = min(hp, key=lambda d: d.distance_m)
         self._beep(closest.distance_m)
 

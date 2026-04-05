@@ -2,19 +2,44 @@
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
 .venv/
 venv/
 ENV/
 env/
 .env
+.env.*
+
+# Build / Distribution
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
 # Models
-# *.pt  # Commented out since yolov8n.pt and yolov8s.pt are committed
-# *.pth
+# yolov8n.pt and other model weights are usually ignored, 
+# but here they might be committed. Adding common ones.
+*.pt
+*.pth
+*.onnx
+*.engine
 
 # IDEs
 .vscode/
 .idea/
+*.swp
+*.swo
 
 # OS
 .DS_Store
@@ -24,17 +49,23 @@ Thumbs.db
 logs/
 *.log
 
-# Coverage
+# Coverage / Testing
 .early.coverage
 .coverage
 .coverage.*
+.pytest_cache/
+.cache/
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
 
 # Python version
 .python-version
 
-# Cache
-.pytest_cache/
-.cache/
+# uv
+uv.lock
+.python-version
 
-# Sample videos - tracked with Git LFS
+# Sample videos - tracked with Git LFS or ignored if large
 # sample-vid/

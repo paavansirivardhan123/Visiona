@@ -10,6 +10,7 @@ import time
 import threading
 import numpy as np
 from typing import Dict, List, Optional
+from pynput import keyboard
 
 from core.config import Config
 from core.detection import Detection
@@ -33,30 +34,52 @@ class CameraFeed:
         self.direction = direction
         self.cap: Optional[cv2.VideoCapture] = None
         self.active = False
+        self.source = source
 
         if source is None:
             return
 
-        self.cap = cv2.VideoCapture(source)
-        if not self.cap.isOpened():
-            print(f"  [Camera] Could not open {direction} source: {source}")
-            self.cap = None
-            return
+        self._open_capture(source)
 
-        self.active = True
-        print(f"  [Camera] {direction} feed active")
+    def _open_capture(self, source):
+        try:
+            self.cap = cv2.VideoCapture(source)
+            if not self.cap.isOpened():
+                print(f"  [Camera] Could not open {self.direction} source: {source}")
+                # Fallback: if source is an index and failed, try 0 as last resort
+                if isinstance(source, int) and source != 0:
+                    print(f"  [Camera] Attempting fallback to device 0 for {self.direction}...")
+                    self.cap = cv2.VideoCapture(0)
+                
+                if not self.cap or not self.cap.isOpened():
+                    self.cap = None
+                    return
+
+            self.active = True
+            print(f"  [Camera] {self.direction} feed active (Source: {source})")
+        except Exception as e:
+            print(f"  [Camera] Error opening {self.direction}: {e}")
+            self.cap = None
 
     def get_frame(self):
         if not self.active or not self.cap:
             return None
-        ret, frame = self.cap.read()
-        if not ret:
-            # Loop video infinitely
-            self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+        try:
             ret, frame = self.cap.read()
             if not ret:
-                return None
-        return frame
+                # Loop video infinitely if it's a file
+                if isinstance(self.source, str) and not self.source.isdigit():
+                    self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    ret, frame = self.cap.read()
+                
+                if not ret:
+                    # If still fails, maybe camera disconnected
+                    self.active = False
+                    return None
+            return frame
+        except Exception as e:
+            print(f"  [Camera] Runtime error reading {self.direction}: {e}")
+            return None
 
     def release(self):
         self.active = False
@@ -74,7 +97,7 @@ class VisionaApp:
         self.speech = SpeechEngine()
         self.logger = SessionLogger()
         self.agent_engine = AgentEngine(
-            tts_callback=lambda x: self.speech.speak(x, priority=True),
+            tts_callback=lambda x: self.speech.speak(x, priority=True, bypass_cooldown=True),
             search_intent_callback=self._on_intent
         )
 
@@ -91,6 +114,7 @@ class VisionaApp:
         self._state        = "SCANNING"
         self._last_info    = ""
         self._mic_active   = False
+        self._mic_mode     = "LLM"           # "LLM" or "MAPS"
         self._search_intent: Optional[str] = None
         self._running      = True
         self._latest_frames = {}
@@ -100,16 +124,47 @@ class VisionaApp:
         self._ai_thread.start()
 
         self.voice = VoiceInputEngine(
-            on_intent=self._on_intent,
-            on_scene_request=self._on_scene,
-            on_question=self._on_question,
-            on_listening=self._on_listening,   # ducking wired here
+            on_speech=self._on_speech,
+            on_listening=self._on_listening,
         )
+        # Start voice engine immediately (it just calibrates in PTT mode)
         self.voice.start()
 
         self.speech.speak("Visiona AI ready.")
-        print("\n  Controls: P = describe scene | V = push-to-talk | ESC = quit")
-        print("  Voice: 'find chair' | 'what is around' | ask anything\n")
+        print("\n  [System] Visiona AI Initialized.")
+        print("  [System] V (Hold) = General AI reasoning / needs.")
+        print("  [System] G (Hold) = Dedicated GPS Navigation.")
+        print("  [System] Controls: ESC = quit\n")
+
+        # Keyboard listener for PTT
+        self._keyboard_listener = keyboard.Listener(on_press=self._on_press, on_release=self._on_release)
+        self._keyboard_listener.start()
+
+    def _on_press(self, key):
+        try:
+            if hasattr(key, 'char'):
+                if key.char == 'v':
+                    if not self._mic_active:
+                        self._mic_mode = "LLM"
+                        self.voice.start_recording()
+                elif key.char == 'g':
+                    if not self._mic_active:
+                        self._mic_mode = "MAPS"
+                        self.voice.start_recording()
+        except AttributeError:
+            pass
+
+    def _on_release(self, key):
+        try:
+            if hasattr(key, 'char'):
+                if key.char == 'v' and self._mic_mode == "LLM":
+                    if self._mic_active:
+                        self.voice.stop_recording()
+                elif key.char == 'g' and self._mic_mode == "MAPS":
+                    if self._mic_active:
+                        self.voice.stop_recording()
+        except AttributeError:
+            pass
 
     # ------------------------------------------------------------------
     # Main loop
@@ -133,7 +188,7 @@ class VisionaApp:
                 break
                 
             # Hand over frames to background AI thread
-            self._latest_frames = raw_frames
+            self._latest_frames = raw_frames.copy()
 
             # 2. Draw overlay (Runs instantly, buttery smooth video)
             for direction, frame in raw_frames.items():
@@ -153,12 +208,9 @@ class VisionaApp:
             key = cv2.waitKey(30) & 0xFF
             if key == 27:
                 break
-            elif key == ord('p') or key == ord('P'):
-                self._on_scene()
-            elif key == ord('v') or key == ord('V'):
-                self.voice.trigger_ptt()
 
         self._shutdown()
+
 
     def _processing_loop(self):
         """Background thread evaluating YOLO+Depth at ~5-10 FPS without stalling video playback."""
@@ -235,7 +287,7 @@ class VisionaApp:
 
         hp = [d for d in sorted_dets if d.is_high_priority]
 
-        # State
+        # 1. State & Threat Level
         if hp:
             self._state = "ALERT"
         elif any(d.distance_m and d.distance_m < 3.0 for d in sorted_dets):
@@ -243,38 +295,79 @@ class VisionaApp:
         else:
             self._state = "SCANNING"
 
-        # Beep
+        # 2. Busy Road Detection (Vehicle Density)
+        vehicles = [d for d in detections if d.label in ("car", "truck", "bus", "motorcycle")]
+        if len(vehicles) >= 5:
+            self.speech.speak("Busy road detected. Use caution while navigating.", priority=True)
+            self._state = "CAUTION"
+
+        # 2.5 Extreme Threat Detection (Emergency Verbal Bypass)
+        # If a large/fast object is very close, speak it IMMEDIATELY even if user is talking
+        for d in hp:
+            if d.label in ("truck", "bus", "car") and d.distance_m and d.distance_m < 2.5:
+                self.speech.speak(f"Emergency: {d.label} ahead!", emergency=True)
+            elif d.label == "person" and d.distance_m and d.distance_m < 1.0:
+                self.speech.speak("Person very close!", emergency=True)
+
+        # 3. Beep (High Priority Alerts)
         self.alert.process(hp)
 
-        # Speech
+        # 4. Speech Summaries
         grouped  = group_detections(sorted_dets)
         messages = build_speech_messages(grouped, hp)
+        
+        # 5. Vision-Augmented Memory Push
+        full_context = self._get_full_spatial_context()
+        memory_bank.add_detections([full_context])
+
+        # 6. Persistent Goal & Proactive Reasoning
+        self._match_goals(sorted_dets)
+
         if messages:
             self._last_info = " | ".join(messages)
             self.logger.log_speech(messages)
             
-            # 6.1 Vision-Augmented Memory Push
-            memory_bank.add_detections(messages)
-            
-            # 6.3 Contextual Curiosity (Proactive Agent Interruption)
+            # 6.3 Contextual Curiosity
             import time
             if time.time() - self._curiosity_cooldown > 30.0:
-                for d in hp:  # Check high priority nearby objects
+                for d in hp:
                     if d.label in ("chair", "car", "stop sign", "bench"):
                         import threading
                         anchor_ctx = f"Important object nearby: {d.label} at {d.distance_m}m."
                         threading.Thread(
                             target=self.agent_engine.process_voice_command, 
-                            args=(f"You proactively noticed a {d.label}. Politely ask the user in one sentence if they need help interacting with or avoiding it.", anchor_ctx)
+                            args=(f"You proactively noticed a {d.label}. Politely ask the user in one sentence if they need help interacting with or avoiding it.", anchor_ctx),
+                            daemon=True
                         ).start()
                         self._curiosity_cooldown = time.time()
                         break
                         
             self.speech.speak_all(messages, first_priority=bool(hp))
 
+    def _match_goals(self, detections: List[Detection]):
+        """Proactively checks if any detected objects match a persistent user goal."""
+        from core.memory import goal_system
+        candidates = goal_system.get_active_candidates()
+        if not candidates:
+            return
+
+        for d in detections:
+            if d.label.lower() in candidates:
+                # We found a goal-related object!
+                if d.label.lower() == "grocery store":
+                    msg = "I've spotted a grocery store nearby. Would you like to stop here for water or food?"
+                else:
+                    dist = f"{d.distance_ft} feet" if d.distance_ft else "nearby"
+                    dir_s = {"FRONT": "in front", "LEFT": "on the left", "RIGHT": "on the right", "BACK": "behind you"}.get(d.direction, "")
+                    msg = f"I see a {d.label} {dist} {dir_s}. This might help your goal."
+                
+                # Proactively speak it if not recently mentioned
+                self.speech.speak(msg, priority=True)
+                break
+
         # Target seeking
         if self._search_intent:
-            self._seek(sorted_dets)
+            self._seek(detections)
 
     def _seek(self, detections: List[Detection]):
         matches = [d for d in detections if self._search_intent in d.label.lower()]
@@ -284,7 +377,7 @@ class VisionaApp:
         dist = f"{t.distance_ft} feet" if t.distance_ft else "nearby"
         dir_s = {"FRONT": "in front", "LEFT": "on the left",
                  "RIGHT": "on the right", "BACK": "behind you"}.get(t.direction, "")
-        self.speech.speak(f"Found {t.label}. {dist} {dir_s}.", priority=True)
+        self.speech.speak(f"Found {t.label}. {dist} {dir_s}.", priority=True, bypass_cooldown=True)
         self._search_intent = None
         self._state = "GUIDING"
 
@@ -293,57 +386,62 @@ class VisionaApp:
     # ------------------------------------------------------------------
 
     def _on_listening(self, active: bool):
-        """Called when PTT mic opens/closes — duck/unduck speech volume."""
+        """Called when PTT or continuous mic opens/closes."""
         self._mic_active = active
         if active:
-            self.speech.duck()    # drop to 30% so user can think and speak
+            self.speech.duck()    # stops and clears speech
+            self.alert.pause()    # stops beep alerts
         else:
-            self.speech.unduck()  # restore to 100% for response
+            self.speech.unduck()  # restores volume
+            self.alert.resume()   # resumes beep alerts
+
+    def _on_speech(self, text: str):
+        """Called when any speech is captured. Routes to LLM or Maps based on mode."""
+        print(f"  [Voice] Received Speech ({self._mic_mode}): \"{text}\"")
+        full_context = self._get_full_spatial_context()
+        
+        if self._mic_mode == "MAPS":
+            # Force navigation intent for G key
+            if self.agent_engine.llm_with_tools:
+                import threading
+                threading.Thread(
+                    target=self.agent_engine.process_voice_command,
+                    args=(f"I need walking directions to: {text}", full_context),
+                    daemon=True
+                ).start()
+            return
+
+        if self.agent_engine.llm_with_tools:
+            import threading
+            threading.Thread(
+                target=self.agent_engine.process_voice_command,
+                args=(text, full_context),
+                daemon=True
+            ).start()
+        else:
+            # Fallback for offline mode
+            self.speech.speak(f"I heard you say: {text}. Reasoning engine is offline.", bypass_cooldown=True)
 
     def _on_intent(self, intent: str):
-        print(f"  [Voice] Intent: {intent}")
+        print(f"  [Voice] Tool Triggered Search: {intent}")
         self._search_intent = intent
-        self._state = "SEARCHING" if intent != "walk forward" else "SCANNING"
-        self.speech.speak(f"Searching for {intent}.", priority=True)
+        self._state = "SEARCHING"
+        self.speech.speak(f"Searching for {intent}.", priority=True, bypass_cooldown=True)
 
-    def _on_scene(self):
-        print("  [Voice] Scene request")
+
+    def _get_full_spatial_context(self) -> str:
+        """Returns a detailed list of all current detections for the AI reasoning engine."""
         if not self._all_dets:
-            self.speech.speak("Path looks clear. No objects detected nearby.")
-            return
-        grouped  = group_detections(self._all_dets)
-        messages = build_speech_messages(grouped, [])
-
-        # Always speak directly first — works even without API key
-        self.speech.speak_all(messages)
-
-        # Also route to agent for richer description if available
-        if self.agent_engine.llm_with_tools:
-            import threading
-            raw_scene = ", ".join(messages)
-            threading.Thread(
-                target=self.agent_engine.process_voice_command,
-                args=("Describe this scene in one natural sentence.", raw_scene),
-                daemon=True
-            ).start()
-
-    def _on_question(self, question: str):
-        print(f"  [Voice] Question: {question}")
-        raw_scene = self._last_info if self._last_info else "Nothing detected right now."
-
-        if self.agent_engine.llm_with_tools:
-            import threading
-            threading.Thread(
-                target=self.agent_engine.process_voice_command,
-                args=(question, raw_scene),
-                daemon=True
-            ).start()
-        else:
-            # Fallback: answer directly from current scene
-            self.speech.speak(
-                f"I can see: {raw_scene}" if self._last_info else "Nothing nearby right now.",
-                priority=False
-            )
+            return "No objects currently detected in view."
+        
+        ctx_parts = []
+        for d in self._all_dets:
+            dist = f"{d.distance_m:.1f}m" if d.distance_m else "unknown distance"
+            dir_s = {"FRONT": "in front", "LEFT": "on the left", 
+                     "RIGHT": "on the right", "BACK": "behind you"}.get(d.direction, d.direction.lower())
+            ctx_parts.append(f"{d.label} at {dist} {dir_s}")
+        
+        return " | ".join(ctx_parts)
 
     # ------------------------------------------------------------------
     # HUD extras
@@ -363,13 +461,19 @@ class VisionaApp:
 
     def _shutdown(self):
         self._running = False
+        print("\n  [System] Shutting down Visiona AI...")
         stats = self.logger.get_stats()
-        print(f"\n  Session ended — {stats['duration_s']}s | {stats['events']} events")
+        print(f"  [System] Session Statistics:")
+        print(f"           - Duration: {stats['duration_s']}s")
+        print(f"           - Total Events: {stats['events']}")
+        print(f"           - Logs saved to: {self.logger._path if hasattr(self.logger, '_path') else 'N/A'}")
+        
         self.voice.stop()
         for f in self.feeds.values():
             f.release()
         cv2.destroyAllWindows()
         self.speech.stop()
+        print("  [System] Shutdown complete. Stay safe.")
 
 
 if __name__ == "__main__":

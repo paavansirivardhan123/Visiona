@@ -1,251 +1,424 @@
-# Visiona AI — Intelligent Assistive Navigation System
+<div align="center">
+
+# 🦯 Visiona AI
+
+### The Intelligent Spatial Guide for the Visually Impaired
+
+*Real-time object detection · Monocular depth estimation · LLM reasoning · Voice interaction · GPS navigation*n*
+
+[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
+[![YOLOv8](https://img.shields.io/badge/YOLOv8n-Ultralytics-8A2BE2?style=flat-square)](https://ultralytics.com)
+[![Depth Anything V2](https://img.shields.io/badge/Depth_Anything_V2-HggingFace-FFD21E?style=flat-square)
+![LangChain](https://img.shields.io/badge/LangChain-Groq_LLaMA3-00A67E?style=flat-square)
+![License](https://img.shields.io/badge/License-MIT-22C55E?style=flat-square)
+
+</div>
+
+---
 
 ## Overview
 
-Visiona is a real-time, multi-camera computer vision system designed to empower visually impaired users with intelligent spatial awareness. Combining YOLO object detection, depth estimation, motion tracking, and LangChain-powered AI reasoning, Visiona transforms raw visual data into conversational guidance delivered through text-to-speech.
+Visiona AI is a real-time assistive navigation system for blind and visually impaired users. It processes live camera feeds, detects and tracks nearby objects, estimates their distance using monocular depth estimation, and delivers clear spoken audio guidance — entirely hands-free.
 
-The system processes synchronized multi-camera feeds, detects objects, calculates distance and collision risk, and communicates findings through intelligible audio alerts and natural language responses.
+The user speaks naturally. Visiona listens, reasons, and responds.
 
-## Demo / Output
+No stereo cameras. No LiDAR. No special hardware. Just a standard RGB camera and a laptop.
 
-*Real-time video stream processing at 30+ FPS with synchronized 4-camera multi-view display grid, proximity-based audio alerts, and voice-interactive guidance system.*
+---
+
+## Demo Output
+
+```
+[FRONT] person ahead   →  "Person ahead approaching"
+[FRONT] 6 persons      →  "Group of persons ahead"
+[ALERT] car at 0.8m    →  Beep + "Warning: car ahead coming fast"
+[VOICE] "I need water" →  "Goal water is active. Searching for bottle, cup, sink..."
+[GPS]   "Take me to the pharmacy" → "Shortest path: 400m, 5 minutes walking"
+```
+
+---
 
 ## Features
 
-- **Multi-Camera Processing**: Synchronous capture from up to 4 directional camera feeds (Front, Left, Right, Back) with dynamic grid-based UI
-- **Fast Object Detection**: YOLO v8 Nano model running on downscaled frames (~50ms per frame)
-- **Monocular Depth Estimation**: Depth-Anything-V2-Small model via HuggingFace Transformers with step-based distance calculation (1 step ≈ 0.75m)
-- **Object Tracking**: ByteTrack-based persistent tracking across frames with motion classification (approaching, moving away, lateral, stationary)
-- **Time-To-Collision (TTC)**: Real-time collision risk computation for approaching objects
-- **Priority-Based Grouping**: Intelligent object grouping with threat scoring and semantic description generation
-- **Multi-Level Alerts**: Proximity-based beeping and high-priority spoken warnings
-- **Voice-Interactive Agent**: LangChain + Groq LLM-powered agent for scene queries, memory retrieval, and target seeking
-- **Session Logging**: JSONL-formatted structured logging of all detections and events
-- **Docker Containerization**: Cross-platform deployment with all system dependencies pre-configured
-- **Asynchronous Architecture**: Non-blocking depth pipeline ensures smooth real-time performance
+**Spatial Awareness**
+- Detects 80+ object classes in real time using YOLOv8n
+- Estimates metric distance using Depth Anything V2 (monocular, no special hardware)
+- Tracks objects across frames with a ByteTrack IoU tracker
+- Computes per-object speed, motion direction, and time-to-collision
+
+**Intelligent Audio Guidance**
+- Speaks compact, natural descriptions: "2 persons ahead", "Group of cars left"
+- Priority queue (max-heap) ensures the most dangerous object is always announced first
+- Dynamic threat scoring: distance × object weight × approach speed × TTC
+- Penalty heatmap prevents the same direction from monopolizing audio
+- Proximity beep alerts with frequency scaling by distance
+
+**Voice Interaction (Push-To-Talk)**
+- Hold `V` to speak a general command or question
+- Hold `G` to request GPS navigation
+- Zero-latency mic pre-warming — no activation delay
+- Audio ducking: speech volume drops to 0% while mic is open
+
+**LLM Reasoning (Groq LLaMA 3.3 70B)**
+- Routes voice commands to the correct tool automatically
+- Answers questions about the current scene and recent history
+- Sets persistent goals ("I need water") and proactively alerts when relevant objects appear
+- Confirmation system: asks "Asking for water?" before executing ambiguous commands
+- Graceful offline fallback when API key is missing
+
+**Memory System**
+- 15-minute rolling visual memory of all detected objects
+- Custom object labeling: "This is my water bottle" remembered by alias
+- Goal system: tracks what the user needs and scans for matching objects
+
+**GPS Navigation**
+- Google Maps walking directions via voice command
+- Selects shortest route from multiple alternatives
+- Returns step-by-step instructions as spoken audio
+
+**Multi-Camera Support**
+- Up to 4 directional feeds: FRONT, LEFT, RIGHT, BACK
+- Unified 2x2 grid HUD display
+- Each feed processed independently, shared YOLO model
+
+---
 
 ## Tech Stack
 
-### Core Libraries
-- **Python 3.11+**: Primary programming language
-- **OpenCV 4.9.0**: Video capture and frame processing
-- **YOLOv8 (Ultralytics)**: Object detection and classification
-- **Transformers 5.5.0**: Depth-Anything-V2-Small depth estimation
-- **PyTorch 2.4.0+**: Deep learning inference backend
+| Layer | Technology |
+|---|---|
+| Object Detection | YOLOv8n (Ultralytics) |
+| Depth Estimation | Depth Anything V2 Small (HuggingFace Transformers) |
+| Object Tracking | ByteTrack (IoU-based, pure NumPy) |
+| Noise Reduction | 1D Kalman Filter (per-track) |
+| LLM Reasoning | Groq API — LLaMA 3.3 70B Versatile |
+| Agent Framework | LangChain Core (tool binding) |
+| Text-to-Speech | pyttsx3 (SAPI5, offline) |
+| Speech Recognition | SpeechRecognition + PyAudio |
+| Keyboard Listener | pynput |
+| GPS Navigation | Google Maps Directions API |
+| Video Processing | OpenCV |
+| Deep Learning | PyTorch |
 
-### AI & Reasoning
-- **LangChain**: Conversational AI framework
-- **Groq API**: LLM backbone (Llama 3.3 70B Versatile)
-- **Python-dotenv**: Environment variable management
-
-### Audio
-- **PyTTSX3 2.90**: Text-to-speech synthesis
-- **SpeechRecognition 3.10+**: Voice input capture
-- **PyAudio 0.2.13**: Audio device interface
-
-### DevOps
-- **Docker**: Full containerization with system dependencies
-- **Docker Compose**: Multi-service orchestration
-
-### Data & Logging
-- **NumPy 1.26.4**: Numerical operations and array processing
-- **TIMM 1.0.26**: Vision transformer utilities
+---
 
 ## Project Structure
 
 ```
-Visiona/
-├── main.py                           # Application entry point and main loop
-├── pyproject.toml                    # Project metadata and dependencies
-├── requirements.txt                  # Pip dependency listing
-├── yolov8n.pt                        # YOLO v8 Nano model weights
-│
-├── agents/
-│   ├── orchestrator.py               # LangChain agent reasoning engine
-│   └── tools/
-│       └── vision_tools.py           # Vision query tools and intent handlers
-│
+visiona/
+├── main.py                         Entry point — camera feeds, main loop, PTT
 ├── core/
-│   ├── config.py                     # Centralized configuration and constants
-│   ├── detection.py                  # Detection dataclass with spatial metadata
-│   ├── logger.py                     # JSONL session logging system
-│   ├── memory.py                     # Agent memory bank for historical detections
-│   └── priority_queue.py             # Max-heap priority queue for threat scoring
-│
+│   ├── config.py                   All settings — single source of truth
+│   ├── detection.py                Detection dataclass with threat_score property
+│   ├── priority_queue.py           Max-heap priority queue
+│   ├── memory.py                   VisionMemory (15-min rolling) + GoalSystem
+│   └── logger.py                   JSONL session telemetry
 ├── perception/
-│   ├── vision.py                     # YOLO detection pipeline + async depth
-│   ├── mono_depth.py                 # Monocular depth estimation (Depth-Anything)
-│   └── tracker.py                    # Object tracking with motion analysis
-│
+│   ├── vision.py                   YOLO + async depth pipeline
+│   ├── mono_depth.py               Depth Anything V2 inference + calibration
+│   └── tracker.py                  ByteTrack IoU tracker with Kalman per track
 ├── kinematics/
-│   ├── speed.py                      # Speed estimation from tracking
-│   ├── ttc.py                        # Time-to-collision calculation
-│   ├── kalman.py                     # Kalman filter for smoothing trajectories
-│   └── heatmap.py                    # Threat heatmap and object grouping
-│
+│   ├── heatmap.py                  Object grouping + speech message builder
+│   ├── speed.py                    Speed estimation + motion classification
+│   ├── ttc.py                      Time-To-Collision calculator (EMA smoothed)
+│   └── kalman.py                   1D Kalman filter for depth noise reduction
 ├── audio/
-│   ├── speech.py                     # Priority-based TTS engine
-│   ├── alert.py                      # Proximity-based beep alerts
-│   └── voice_input.py                # Background microphone listener
-│
+│   ├── speech.py                   Priority TTS queue + ducking + emergency bypass
+│   ├── voice_input.py              Zero-latency PTT mic capture
+│   └── alert.py                    Proximity beep alerts (pauseable)
+├── agents/
+│   ├── orchestrator.py             LangChain agent engine + confirmation system
+│   └── tools/
+│       └── vision_tools.py         9 LangChain tools (memory, search, GPS, goals)
 ├── services/
-│   ├── google_maps.py                # Google Maps integration (future)
-│   └── vector_db.py                  # Vector database for semantic search
-│
-├── docker/
-│   ├── Dockerfile                    # Linux environment with all dependencies
-│   └── docker-compose.yml            # Multi-service orchestration
-│
-├── sample-vid/                       # Test video samples
-└── logs/                             # Session logs (JSONL format)
+│   ├── google_maps.py              Google Maps Directions API wrapper
+│   └── vector_db.py                Object signature storage (placeholder)
+├── sample-vid/                     Test video files
+├── yolov8n.pt                      YOLO model weights
+├── pyproject.toml                  Dependencies (managed with uv)
+├── .env                            API keys (not committed)
+└── .env.example                    Template for .env
 ```
+
+---
+
+## System Workflow
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  STAGE 1 — Input Capture                                    │
+│                                                             │
+│  • CameraFeed reads frames from up to 4 video sources       │
+│  • Frames resized to 1280px wide for YOLO processing        │
+│  • Each direction (FRONT / LEFT / RIGHT / BACK) runs        │
+│    independently in its own thread                          │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│  STAGE 2 — Object Detection          perception/vision.py   │
+│                                                             │
+│  • YOLOv8n detects 80+ object classes (~50ms on CPU)        │
+│  • Bounding boxes scaled to display coordinates             │
+│  • Depth Anything V2 runs in background thread (~300ms)     │
+│  • Cached depth applied immediately; heuristic fallback     │
+│    used until depth model warms up                          │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│  STAGE 3 — Tracking + Kinematics     perception/tracker.py  │
+│                                      kinematics/            │
+│  • ByteTrack assigns persistent IDs via IoU matching        │
+│  • Kalman filter smooths depth per track, rejects spikes    │
+│  • Speed = ΔDistance / ΔTime  (metres per second)           │
+│  • TTC  = Distance / Speed    (EMA smoothed)                │
+│  • threat_score = distance × weight + speed + TTC bonus     │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│  STAGE 4 — Priority + Grouping       core/priority_queue.py │
+│                                      kinematics/heatmap.py  │
+│  • Max-heap sorts by: TTC → distance → object type          │
+│  • Penalty heatmap prevents one direction dominating audio  │
+│  • Groups objects: "Group of persons ahead" / "2 cars left" │
+│  • Emergency TTC bypass always speaks critical warnings     │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│  STAGE 5 — Output                    audio/                 │
+│                                                             │
+│  • SpeechEngine: priority queue, ducking, emergency bypass  │
+│  • AlertSystem: proximity beeps, frequency scales by dist   │
+│  • HUD: state badge, bounding boxes, TTC warning rings      │
+│  • SessionLogger: full JSONL telemetry saved per session    │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│  STAGE 6 — Voice + LLM               audio/voice_input.py   │
+│                                      agents/orchestrator.py │
+│  • Hold V / G → PyAudio pre-warmed stream (zero latency)    │
+│  • SpeechRecognition → Google STT → plain text              │
+│  • AgentEngine routes to the right LangChain tool:          │
+│      query_past_detections  →  15-min visual memory         │
+│      set_search_intent      →  YOLO target seeking          │
+│      set_persistent_goal    →  proactive object scanning    │
+│      calculate_route        →  Google Maps directions       │
+│      save_object_signature  →  custom object labeling       │
+│  • Groq LLaMA 3.3 70B synthesizes final spoken response     │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
 
 ## Installation
 
-### Prerequisites
-- Python 3.11 or higher
-- pip or UV package manager
-- (Optional) NVIDIA GPU with CUDA for faster inference
+**1. Clone the repository**
 
-### Local Installation
+```bash
+git clone https://github.com/yourname/visiona.git
+cd visiona
+```
 
-1. **Clone the Repository**
-   ```bash
-   git clone https://github.com/yourusername/Visiona.git
-   cd Visiona
-   ```
+**2. Install dependencies**
 
-2. **Create Virtual Environment**
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate  # On Windows: .venv\Scripts\Activate.ps1
-   ```
+```bash
+pip install uv
+uv sync
+```
 
-3. **Install Dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
+> All dependencies are pinned in `pyproject.toml`. Key packages:
+> `ultralytics` · `transformers` · `torch` · `opencv-python` · `langchain-groq` · `pyttsx3` · `SpeechRecognition` · `pyaudio` · `pynput`
 
-4. **Set Up Environment Variables** (Optional for LangChain Agent)
-   ```bash
-   cp .env.example .env
-   # Edit .env and add:
-   # GROQ_API_KEY=your_groq_api_key
-   # MAPS_API_KEY=your_google_maps_api_key (optional)
-   ```
+**3. Configure API keys**
 
-### Docker Installation
+```bash
+cp .env.example .env
+```
 
-1. **Build Docker Image**
-   ```bash
-   docker-compose -f docker/docker-compose.yml build
-   ```
+Edit `.env`:
 
-2. **Run Container**
-   ```bash
-   docker-compose -f docker/docker-compose.yml up
-   ```
+```env
+GROQ_API_KEY="your_groq_api_key_here"
+MAPS_API_KEY="your_google_maps_api_key_here"
+```
+
+- Free Groq key: [console.groq.com](https://console.groq.com)
+- Google Maps key: [console.cloud.google.com](https://console.cloud.google.com) — enable Directions API
+- Both are optional. The system runs without them using offline fallbacks.
+
+**4. Run**
+
+```bash
+On first run, Depth Anything V2 downloads ~100MB of model weights (cached after that).
+
+The default config uses `sample-vid/sample3.mp4`. To use a live webcam, set `SOURCES = {"FRONT": 0}` in `core/config.py`.
+
+> Windows note: If `pyaudio` fails, run `pip install pipwin && pipwin install pyaudio`
+On first run, Depth Anything V2 downloads ~100MB of model weights (cached after that).
+
+> Windows note: If `pyaudio` fails, run `pip install pipwin && pipwin install pyaudio`
+
+---
 
 ## Usage
 
-### Running the Application
+### Controls
 
-**Local Execution:**
-```bash
-python main.py
-```
+| Key | Action |
+|---|---|
+| Hold `V` | Open mic for general AI command or question |
+| Hold `G` | Open mic for GPS navigation request |
+| `ESC` | Quit |
 
-**Docker Execution:**
-```bash
-docker-compose -f docker/docker-compose.yml up
-```
+### Voice Commands
+
+| Say this | What happens |
+|---|---|
+| "find chair" | YOLO starts searching for a chair |
+| "I need water" | Sets persistent goal, searches for bottle/cup/sink |
+| "where is the exit?" | Searches for door/stairs |
+| "what is around me?" | Describes current scene |
+| "take me to the pharmacy" | Google Maps walking directions |
+| "this is my water bottle" | Labels the nearest bottle in memory |
+| "where did I leave my keys?" | Searches 15-minute visual memory |
+| Any question | Routed to LLM with full scene context |
 
 ### Configuration
 
-Edit `core/config.py` to customize:
-- **Video sources**: `SOURCES` dictionary (file paths or camera indices 0, 1, 2, 3)
-- **Detection thresholds**: `CONF_THRESHOLD`, `FRAME_SKIP`
-- **Distance filtering**: `MAX_DISTANCE_M`, `CONSIDER_MAX_M`, `HIGH_PRIORITY_M`
-- **Object priorities**: `OBJECT_PRIORITY` dictionary
-- **Speech settings**: `SPEECH_RATE`, `SPEECH_COOLDOWN`, `SEMANTIC_COOLDOWN`
-- **Alert beep levels**: `BEEP_LEVELS` tuples (distance_m, freq_hz, duration_ms)
+All settings in `core/config.py`:
 
-### Voice Interaction
-
-Once running, the system listens for voice commands:
-- *"Where did I put my coffee cup?"* → Queries memory for past detections
-- *"What is in front of me?"* → Summarizes current scene
-- *"Find me a chair"* → Sets search intent and navigates to target
-- Regular queries are answered based on real-time YOLO detections
-
-### Output Format
-
-**Session Logs** (`logs/session_YYYYMMDD_HHMMSS.jsonl`):
-Each line contains a JSON detection record:
-```json
-{
-  "timestamp": "2026-04-04T19:54:47.123",
-  "direction": "FRONT",
-  "label": "person",
-  "confidence": 0.92,
-  "distance_m": 2.3,
-  "speed_mps": 0.5,
-  "motion": "approaching",
-  "ttc_sec": 4.6,
-  "track_id": 5,
-  "threat_score": 45.3
+```python
+# Video sources — use integer index for live cameras
+SOURCES = {
+    "FRONT": 0,      # webcam
+    "LEFT":  None,   # disabled
 }
+
+# Distance zones
+CONSIDER_MAX_M  = 5.25    # only describe objects within this range
+HIGH_PRIORITY_M = 1.125   # triggers beep + priority alert
+
+# Speech
+SEMANTIC_COOLDOWN = 5.0   # seconds between repeated normal announcements
+SPEECH_COOLDOWN   = 2.5   # seconds between repeated warnings
+
+# Depth model
+DEPTH_MODEL_ID = "depth-anything/Depth-Anything-V2-Small-hf"
 ```
+
+---
 
 ## How It Works
 
-### Processing Pipeline
+### Depth Estimation
 
-1. **Frame Capture**: Four camera feeds are synchronized and captured at the start of each main loop cycle
-2. **YOLO Detection**: Frames are downscaled to 1280px width and processed by YOLO v8 Nano (~50ms)
-3. **Async Depth**: Background thread runs Depth-Anything-V2 inference without blocking display (~300ms, results cached)
-4. **Distance Calculation**: Raw depth values are scaled to real-world meters using reference calibration
-5. **Tracking**: ByteTrack maintains persistent object identities across frames
-6. **Motion Analysis**: Speed and motion direction calculated from tracking trajectories
-7. **TTC Computation**: For approaching objects, time-to-collision computed as distance / speed
-8. **Priority Scoring**: Objects ranked by TTC, distance, and threat category
-9. **Grouping**: Nearby objects merged into semantic groups (e.g., "group of people")
-10. **Speech Generation**: Groups converted to natural language descriptions
-11. **Audio Output**: TTS renders descriptions with priority-based queue; proximity alerts beep
-12. **Agent Query** (Optional): Voice commands routed to LangChain agent for reasoning
+Depth Anything V2 outputs relative inverse depth — higher values mean closer objects. Converted to metric metres:
 
-### Key Architecture Decisions
+```
+metric_depth_m = (scale / depth_value) x 2.0
+```
 
-- **Asynchronous Depth**: Depth inference runs in background thread to prevent frame rate degradation
-- **Frame Downscaling**: YOLO processes downscaled frames for speed (1280px vs. 4K)
-- **Step-Based Distance**: Distances converted to "steps" (0.75m each) for user comprehension
-- **Priority Queue**: Threat-score-based heap ensures critical alerts delivered first
-- **Synthetic Depth Fallback**: Heuristic depth calculation (focal length + object width) as fallback
-- **Kalman Smoothing**: Per-object Kalman filters reduce noise in tracking and depth estimates
+Scale is auto-calibrated on first frame using detected reference objects via the pinhole camera model.
 
-### Agentic Features (Phase 6)
+### Threat Scoring
 
-The integrated LangChain agent provides advanced capabilities:
-- **Memory Retrieval**: "Where did I leave my..."
-- **Scene Summarization**: Natural language descriptions of complex environments
-- **Spatial Reasoning**: "What is on the table?"
-- **Contextual Curiosity**: Proactive guidance for navigation anchors
-- **Search Intent**: User-defined target seeking with active guidance
-- **Route Planning**: Integration with Google Maps for turn-by-turn navigation (future)
+```python
+score = (10.0 - distance_m) x object_weight
+      + speed_mps x 20       # if approaching
+      + 100.0                 # if TTC <= 3.5 seconds
+```
 
-## Future Improvements
+Objects above `THREAT_HIGH_THRESHOLD = 50.0` trigger beep alerts and priority speech.
 
-- **Stereo Depth**: Add binocular depth from dual cameras for improved accuracy
-- **3D Scene Reconstruction**: Build persistent 3D maps of environments
-- **Multi-Modal Learning**: Combine depth, motion, and semantic context for stronger predictions
-- **Adaptive Beep Patterns**: Spatial audio via directional beeping or bone-conduction audio
-- **Turn-by-Turn Navigation**: Full GPS + visual navigation integration
-- **Fine-Tuned LLM**: Domain-specific model trained on spatial reasoning tasks
-- **Real-time Performance Optimization**: GPU acceleration and model quantization
-- **Outdoor Robustness**: Adapt detection and depth for sunlight variations
-- **User Feedback Loop**: Active learning from user corrections
+### Priority Queue
+
+Max-heap sorted by three factors:
+
+1. TTC — `1000 / ttc_sec` (lower TTC = highest urgency)
+2. Distance — `(CONSIDER_MAX_M - distance_m) x 10`
+3. Object type — `OBJECT_PRIORITY` weight
+
+### Penalty Heatmap
+
+After speaking about a direction, a penalty of 30 points is applied to it. Penalties decay at 3 points/second. This prevents the system from repeatedly announcing the same direction and ensures all directions get coverage.
+
+### LLM Agent
+
+1. Voice command arrives via PTT
+2. LLM decides which tool(s) to call
+3. If intent is ambiguous, asks "Asking for [intent]?" before executing
+4. Tools execute (memory lookup, YOLO search, GPS, goal setting)
+5. LLM synthesizes a single spoken response from tool results
+
+---
+
+## Key Design Decisions
+
+**Async depth pipeline** — Depth Anything V2 runs in a background thread. The main loop never waits for it. This keeps video smooth at 30+ FPS while depth updates at ~3 FPS.
+
+**YOLO on 1280px, not 4K** — Running YOLO on a 4K frame produces zero detections because objects are too small after internal downscaling. Resizing to 1280px first gives YOLO enough detail while being 4x faster.
+
+**Zero-latency PTT** — The microphone stream is pre-warmed at startup. When the user presses V, recording starts instantly with no activation delay.
+
+**Emergency speech bypass** — Critical alerts (vehicle < 2.5m, person < 1.0m) bypass the ducking system and play at full volume even while the mic is open.
+
+**Offline-first design** — Every component has a graceful fallback. No API key means LLM disabled with direct scene description used. Depth model failure means heuristic bounding-box estimation. No mic means keyboard controls still work.
+
+---
+
+## Session Logs
+
+Every session saved to `logs/session_YYYYMMDD_HHMMSS.jsonl`:
+
+```json
+{"event": "detection", "direction": "FRONT", "objects": [
+  {"object": "person", "direction": "FRONT", "mode": "monocular",
+   "distance_m": 1.4, "speed_mps": 0.8, "motion": "approaching",
+   "ttc_sec": 1.8, "priority": "high"}
+], "t": 4.21}
+{"event": "speech", "messages": ["Warning: person ahead coming fast"], "t": 4.22}
+```
+
+---
+
+## Roadmap
+
+- [x] YOLOv8n real-time detection (4 camera feeds)
+- [x] Depth Anything V2 monocular depth estimation
+- [x] Auto scale calibration from reference objects
+- [x] ByteTrack object tracking with Kalman filter
+- [x] Speed + motion classification
+- [x] Time-To-Collision calculation
+- [x] Max-heap priority queue (TTC → distance → type)
+- [x] Dynamic threat scoring + penalty heatmap
+- [x] Priority TTS queue with ducking + emergency bypass
+- [x] Zero-latency PTT voice input
+- [x] LangChain agent with 9 tools (Groq LLaMA 3.3 70B)
+- [x] 15-minute visual memory + custom object labeling
+- [x] Persistent goal system (proactive scanning)
+- [x] Google Maps GPS navigation
+- [x] Session logging (JSONL)
+- [ ] GPU acceleration (CUDA)
+- [ ] Wearable camera support (glasses mount)
+- [ ] Mobile app wrapper (Android/iOS)
+- [ ] Offline LLM fallback (Ollama)
+## Author
+
+**Author:** _(your name)_
+**Email:** _(your email)_
+**GitHub:** _(your github)_
 
 ## Author
 
-Author: Paavan Siri Vardhan Narava
-Email: naravapaavansirivardhan@gmail.com
+**Author:** Paavan Siri VArdhan Narava 
+**Email:** paavansirivardhannarava@gmail.com
+ 
+---
+
+<div align="center">
+Built to make the world navigable for everyone.
+</div>

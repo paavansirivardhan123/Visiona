@@ -44,10 +44,10 @@ class Detection:
         score = dist_factor * weight
         
         if self.motion == "approaching" and self.speed_mps:
-            score += (self.speed_mps * 10)
+            score += (self.speed_mps * 20)  # Increased from 10 to 20
             
         if self.ttc_sec is not None and self.ttc_sec <= Config.TTC_WARN_THRESHOLD:
-            score += 50.0
+            score += 100.0  # Increased from 50 to 100 for high threat awareness
             
         return score
 

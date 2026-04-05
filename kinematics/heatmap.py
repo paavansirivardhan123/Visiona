@@ -16,7 +16,6 @@ from typing import Dict, List
 import time
 
 from core.detection import Detection
-from core.priority_queue import DetectionPriorityQueue
 from core.config import Config
 
 
@@ -112,79 +111,51 @@ def build_speech_messages(
 
 def _count_phrase(label: str, count: int, direction: str, sample: Detection) -> str:
     """
-    Build a count-based phrase per spec:
-      count > 5  → "Group of people in front"
-      count <= 5 → "3 people on the left"
-      count == 1 → "a person in front"
-    With motion awareness appended if applicable.
+    EXTREMELY COMPACT phrases:
+      "2 persons ahead"
+      "Group of cars left"
     """
-    dir_str = _dir(direction)
+    dir_str = _dir_compact(direction)
     plural  = label + "s" if not label.endswith("s") else label
 
     if count > Config.GROUP_THRESHOLD:
         base = f"Group of {plural} {dir_str}"
     elif count == 1:
-        base = f"a {label} {dir_str}"
+        base = f"{label} {dir_str}"
     else:
         base = f"{count} {plural} {dir_str}"
 
-    # Append distance
-    if sample.distance_m is not None:
-        steps = max(1, round(sample.distance_m / Config.METERS_PER_STEP))
-        step_word = "step" if steps == 1 else "steps"
-        base += f" at {steps} {step_word}"
-
-    # Append motion info
-    if sample.motion == "approaching" and sample.speed_mps:
-        speed_word = _get_speed_descriptor(sample.speed_mps)
-        base += f", approaching {speed_word}"
-    elif sample.motion == "moving_away" and sample.speed_mps:
-        speed_word = _get_speed_descriptor(sample.speed_mps)
-        base += f", moving away {speed_word}"
-    elif sample.motion == "moving_away":
-        base += ", moving away"
-
-    # Warning prefix for low TTC
+    # Append motion awareness ONLY if approaching/danger
     if sample.ttc_sec is not None and sample.ttc_sec <= Config.TTC_WARN_THRESHOLD:
-        base = f"Warning: {base}"
+        base = f"Warning: {base} coming fast"
+    elif sample.motion == "approaching":
+        base += " approaching"
 
     return base
 
 
 def _build_msg(d: Detection, force_close: bool) -> str:
-    """Build message for a single high-priority detection."""
-    dir_str = _dir(d.direction)
+    """Build compact message for a single high-priority detection."""
+    dir_str = _dir_compact(d.direction)
     label   = d.label
-    dist_s  = ""
-    if d.distance_m:
-        steps = max(1, round(d.distance_m / Config.METERS_PER_STEP))
-        step_word = "step" if steps == 1 else "steps"
-        dist_s = f"{steps} {step_word}"
-
-    if d.motion == "approaching" and d.speed_mps:
-        speed_word = _get_speed_descriptor(d.speed_mps)
-        msg = f"{label.capitalize()} approaching {dir_str} {speed_word}"
-    elif force_close or (d.distance_m and d.distance_m <= Config.HIGH_PRIORITY_M):
-        msg = f"{label.capitalize()} very close {dir_str}"
-        if dist_s:
-            msg += f", {dist_s}"
+    
+    if d.motion == "approaching":
+        msg = f"{label} approaching {dir_str}"
     else:
-        msg = f"{label.capitalize()} {dir_str}"
-        if dist_s:
-            msg += f" at {dist_s}"
+        msg = f"{label} {dir_str}"
 
     if d.ttc_sec is not None and d.ttc_sec <= Config.TTC_WARN_THRESHOLD:
-        msg = f"Warning: {msg}"
+        msg = f"Warning: {msg} coming fast"
 
     return msg
 
 
-def _dir(direction: str) -> str:
+def _dir_compact(direction: str) -> str:
     return {
-        "FRONT": "in front",
-        "LEFT":  "on the left",
-        "RIGHT": "on the right",
-        "BACK":  "behind you",
+        "FRONT": "ahead",
+        "LEFT":  "left",
+        "RIGHT": "right",
+        "BACK":  "behind",
     }.get(direction, direction.lower())
 
 def _get_speed_descriptor(speed_mps: float) -> str:

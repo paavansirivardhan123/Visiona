@@ -1,3 +1,8 @@
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
+
 class Config:
     """Centralized configuration — single source of truth."""
 
@@ -22,16 +27,23 @@ class Config:
     FRAME_SKIP     = 2
 
     # ------------------------------------------------------------------ #
-    #  Distance Filtering (Step-Based for Mobile)
-    #  1 step ≈ 2.5 feet ≈ 0.75 meters
+    #  Monocular Depth (Depth Anything V2 via HuggingFace Transformers)
     # ------------------------------------------------------------------ #
-    METERS_PER_STEP = 0.75
-    MAX_DISTANCE_M  = 10.0 * METERS_PER_STEP  # ~7.5m (10 steps)
-    CONSIDER_MAX_M  = 7.0 * METERS_PER_STEP   # ~5.25m (7 steps)
-    HIGH_PRIORITY_M = 3.0 * METERS_PER_STEP   # ~2.25m (3 steps)
+    DEPTH_MODEL_ID      = "depth-anything/Depth-Anything-V2-Small-hf"
+    MIDAS_DEFAULT_SCALE = 2000.0   # scale / midas_val = metres; tuned for typical scenes
+    DEPTH_SMOOTH_FRAMES = 5
 
     # ------------------------------------------------------------------ #
-    #  Heuristic fallback (used when MiDaS unavailable)
+    #  Distance Filtering
+    #  1 step ≈ 0.75 metres
+    # ------------------------------------------------------------------ #
+    METERS_PER_STEP = 0.75
+    MAX_DISTANCE_M  = 10.0 * METERS_PER_STEP   # ~7.5 m
+    CONSIDER_MAX_M  = 7.0  * METERS_PER_STEP   # ~5.25 m
+    HIGH_PRIORITY_M = 1.5  * METERS_PER_STEP   # ~1.125 m
+
+    # ------------------------------------------------------------------ #
+    #  Heuristic fallback (used when depth model unavailable)
     # ------------------------------------------------------------------ #
     FOCAL_LENGTH_PX     = 700
     AVG_OBJECT_WIDTH_CM = 30
@@ -43,19 +55,22 @@ class Config:
     }
 
     # ------------------------------------------------------------------ #
-    #  Environment variables (API Keys)
+    #  API Keys (loaded from .env)
     # ------------------------------------------------------------------ #
-    import os
-    from dotenv import load_dotenv
-    load_dotenv()
-    
-    GROQ_API_KEY  = os.getenv("GROQ_API_KEY", "")
-    MAPS_API_KEY  = os.getenv("MAPS_API_KEY", "")
+    GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+    MAPS_API_KEY = os.getenv("MAPS_API_KEY", "")
 
     # ------------------------------------------------------------------ #
-    #  Hardware / Hardware Config
+    #  AI Reasoning (LangChain + Groq)
     # ------------------------------------------------------------------ #
-    MIC_DEVICE_INDEX = None  # Change this to an integer (e.g., 1) if default mic fails
+    LLM_MODEL       = "llama-3.3-70b-versatile"
+    LLM_TEMPERATURE = 0.1
+    LLM_COOLDOWN    = 5.0
+
+    # ------------------------------------------------------------------ #
+    #  Hardware
+    # ------------------------------------------------------------------ #
+    MIC_DEVICE_INDEX = None   # Set to int (e.g. 1) if default mic fails
 
     # ------------------------------------------------------------------ #
     #  Object Grouping
@@ -66,16 +81,15 @@ class Config:
     #  Threat Scoring & Penalty Heatmap
     # ------------------------------------------------------------------ #
     OBJECT_PRIORITY = {
-        "person": 10, "child": 10,
+        "person": 12, "child": 12,
         "car": 9, "truck": 9, "bus": 9, "motorcycle": 8, "bicycle": 7,
         "dog": 6, "cat": 5,
         "chair": 3, "dining table": 3, "bottle": 2, "cup": 2,
     }
-    DEFAULT_PRIORITY = 1
-    
-    THREAT_HIGH_THRESHOLD = 70.0  # Above this score is an Extreme Threat
-    PENALTY_APPLY         = 30.0  # Points deducted from a direction when spoken
-    PENALTY_DECAY         = 3.0   # Points recovered per second
+    DEFAULT_PRIORITY      = 1
+    THREAT_HIGH_THRESHOLD = 50.0
+    PENALTY_APPLY         = 30.0
+    PENALTY_DECAY         = 3.0
 
     # ------------------------------------------------------------------ #
     #  Alert beep levels  (distance_m, freq_hz, duration_ms)
@@ -90,8 +104,8 @@ class Config:
     #  Speech
     # ------------------------------------------------------------------ #
     SPEECH_RATE       = 185
-    SPEECH_COOLDOWN   = 2.5   # Warning repeat delay
-    SEMANTIC_COOLDOWN = 5.0   # Normal object repeat delay (reduced from 12s)
+    SPEECH_COOLDOWN   = 2.5    # Warning / priority repeat delay (seconds)
+    SEMANTIC_COOLDOWN = 5.0    # Normal object repeat delay (seconds)
     MAX_MESSAGES      = 3
 
     # ------------------------------------------------------------------ #
@@ -107,20 +121,6 @@ class Config:
     # ------------------------------------------------------------------ #
     LOG_ENABLED = True
     LOG_DIR     = "logs"
-
-    # ------------------------------------------------------------------ #
-    #  LLM (optional)
-    # ------------------------------------------------------------------ #
-    LLM_MODEL       = "llama3-70b-8192"
-    LLM_TEMPERATURE = 0
-    LLM_COOLDOWN    = 5.0
-
-    # ------------------------------------------------------------------ #
-    #  Monocular Depth (Depth Anything v2)
-    # ------------------------------------------------------------------ #
-    DEPTH_MODEL_ID      = "depth-anything/Depth-Anything-V2-Small-hf"
-    MIDAS_DEFAULT_SCALE = 1.0
-    DEPTH_SMOOTH_FRAMES = 5
 
     # ------------------------------------------------------------------ #
     #  Kalman Filter
@@ -152,4 +152,4 @@ class Config:
     # ------------------------------------------------------------------ #
     #  Performance
     # ------------------------------------------------------------------ #
-    FRAME_BUDGET_MS = 2000  # MiDaS on CPU needs up to 200ms, YOLO ~100ms
+    FRAME_BUDGET_MS = 2000

@@ -50,6 +50,7 @@ class VisionSystem:
         self._depth_frame:   Optional[np.ndarray] = None
         self._depth_ready    = False
 
+        self._frame_count = 0
         self._last_detections: List[Detection] = []
 
         # Warm up MiDaS in background so it's ready quickly
@@ -65,7 +66,13 @@ class VisionSystem:
         Fast path: YOLO on downscaled frame.
         Depth runs async in background — cached results used immediately.
         """
+        self._frame_count += 1
         orig_h, orig_w = frame.shape[:2]
+
+        # 1. Skip frames for efficiency if needed
+        # (YOLO is fast, but we can still skip to save CPU for MiDaS)
+        if self._frame_count % Config.FRAME_SKIP != 0:
+            return self._last_detections
 
         # Downscale for YOLO (much faster than 4K)
         scale_factor = _YOLO_WIDTH / orig_w
@@ -76,8 +83,8 @@ class VisionSystem:
         disp_sx = Config.DISPLAY_W / _YOLO_WIDTH
         disp_sy = Config.DISPLAY_H / yolo_h
 
-        # 1. YOLO on downscaled frame
-        raw = self.model(yolo_frame, imgsz=Config.IMG_SIZE, verbose=False)
+        # 2. YOLO on downscaled frame
+        raw = self.model(yolo_frame, imgsz=Config.IMG_SIZE, verbose=False, device='cpu') # Explicit CPU for low-end compatibility
         detections: List[Detection] = []
         yolo_boxes = []
 
@@ -156,22 +163,28 @@ class VisionSystem:
                 return
             self._depth_running = True
 
-        def _run():
+        def _run(depth_frame, depth_boxes, depth_labels):
             try:
                 depths = self.depth.compute(
-                    frame, boxes, labels,
-                    [None] * len(boxes)
+                    depth_frame, depth_boxes, depth_labels,
+                    [None] * len(depth_boxes)
                 )
                 with self._depth_lock:
                     self._cached_depths = depths
                     self._depth_ready   = True
             except Exception as e:
-                pass
+                print(f"  [Vision] Depth error: {e}")
             finally:
                 with self._depth_lock:
                     self._depth_running = False
 
-        threading.Thread(target=_run, daemon=True).start()
+        # Pass copies to thread to avoid closure issues or mutation
+        import copy
+        threading.Thread(
+            target=_run, 
+            args=(frame.copy(), copy.deepcopy(boxes), copy.deepcopy(labels)), 
+            daemon=True
+        ).start()
 
     # ------------------------------------------------------------------
     # Rendering
