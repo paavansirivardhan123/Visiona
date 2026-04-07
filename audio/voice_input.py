@@ -1,144 +1,147 @@
-"""
-VoiceInputEngine — Dynamic Natural Language Capture with PTT.
+﻿"""
+VoiceInputEngine - Hold-to-Talk PTT voice capture.
 
-Supports explicit start/stop recording for 'Hold-to-Talk' (V key).
+Hold V -> start_recording()  (called from main.py on_press)
+Release V -> stop_recording() (called from main.py on_release)
+
+The mic stream is pre-warmed at startup so there is zero activation lag.
+Audio is captured into a buffer while the key is held, then sent to
+Google Speech-to-Text when released.
 """
 import threading
 import time
 import io
 import wave
-from typing import Callable, Optional
 
 try:
-    import speech_recognition as sr
     import pyaudio
+    import speech_recognition as sr
     _READY = True
 except ImportError:
     _READY = False
+    print("  [Voice] pyaudio or SpeechRecognition not installed.")
+    print("  [Voice] Run: uv add pyaudio SpeechRecognition")
+
 
 class VoiceInputEngine:
 
     def __init__(self, on_speech, on_listening=None):
-        self.on_speech        = on_speech
-        self.on_listening     = on_listening or (lambda _: None)
+        self.on_speech    = on_speech
+        self.on_listening = on_listening or (lambda _: None)
+        self.ready        = False
 
-        self._cooldown  = 0.3
-        self._last_cmd  = 0.0
-        self._active    = False              # True while recording
-        self._recording = False              # True while stream is active
-        self._frames    = []
-        self.ready      = _READY
-        self._pa        = pyaudio.PyAudio() if _READY else None
-        self._stream    = None
         self._lock      = threading.Lock()
-        
-        if _READY:
-            self._start_background_stream()
-            print(f"  [Voice] Mic ready. Low-latency PTT (V key) Active.")
+        self._active    = False
+        self._frames    = []
+        self._stream    = None
+        self._pa        = None
+        self._capturing = False
+        self._last_cmd  = 0.0
 
-    def _start_background_stream(self):
-        """Pre-warms the microphone stream to eliminate activation lag."""
+        if not _READY:
+            return
+
         try:
+            self._pa = pyaudio.PyAudio()
             self._stream = self._pa.open(
                 format=pyaudio.paInt16,
                 channels=1,
                 rate=16000,
                 input=True,
                 frames_per_buffer=1024,
-                start=True
+                start=True,
             )
-            self._recording = True
+            self._capturing = True
             threading.Thread(target=self._capture_loop, daemon=True).start()
+            self.ready = True
+            print("  [Voice] Mic pre-warmed. Hold V to speak, hold G for GPS.")
         except Exception as e:
-            print(f"  [Voice] Failed to pre-warm mic: {e}")
-            self.ready = False
+            print(f"  [Voice] Mic init failed: {e}")
+            print("  [Voice] Check that a microphone is connected and not in use.")
 
     def start_recording(self):
-        """Instantly starts saving frames for processing."""
+        """Start saving mic frames. Called when V/G key is pressed."""
         if not self.ready or self._active:
             return
-        
         with self._lock:
             self._active = True
             self._frames = []
-        
         self.on_listening(True)
-        print("  [Voice] 🎤 Listening (Zero-lag)...")
+        print("  [Voice] Listening...", end="\r")
+
+    def stop_recording(self):
+        """Stop saving frames and process the buffer. Called when V/G key is released."""
+        if not self._active:
+            return
+        with self._lock:
+            self._active = False
+            captured = self._frames.copy()
+            self._frames = []
+        self.on_listening(False)
+
+        if not captured:
+            print("  [Voice] No audio captured.")
+            return
+
+        print("  [Voice] Processing...   ", end="\r")
+        threading.Thread(target=self._process, args=(captured,), daemon=True).start()
+
+    def stop(self):
+        """Clean up mic resources on shutdown."""
+        self._capturing = False
+        try:
+            if self._stream:
+                self._stream.stop_stream()
+                self._stream.close()
+            if self._pa:
+                self._pa.terminate()
+        except Exception:
+            pass
 
     def _capture_loop(self):
-        """Continuously reads from the mic but only saves when _active is True."""
-        while self._recording:
+        while self._capturing:
             try:
                 data = self._stream.read(1024, exception_on_overflow=False)
                 if self._active:
                     with self._lock:
                         self._frames.append(data)
             except Exception as e:
-                if self._recording:
-                    print(f"  [Voice] Capture loop error: {e}")
+                if self._capturing:
+                    print(f"\n  [Voice] Capture error: {e}")
                 break
 
-    def stop_recording(self):
-        """Stops capturing and processes the buffer."""
-        if not self._active:
-            return
-        
-        with self._lock:
-            self._active = False
-            captured_frames = self._frames.copy()
-            self._frames = []
-            
-        self.on_listening(False)
-        print("  [Voice] Processing speech...")
-        
-        if captured_frames:
-            threading.Thread(target=self._process_buffer, args=(captured_frames,), daemon=True).start()
-
-    def _process_buffer(self, frames):
+    def _process(self, frames):
+        """Convert raw PCM frames to WAV, send to Google STT, dispatch result."""
         try:
-            raw_data = b"".join(frames)
-            with io.BytesIO() as wav_io:
-                with wave.open(wav_io, "wb") as wf:
-                    wf.setnchannels(1)
-                    wf.setsampwidth(self._pa.get_sample_size(pyaudio.paInt16))
-                    wf.setframerate(16000)
-                    wf.writeframes(raw_data)
-                
-                wav_io.seek(0)
-                recognizer = sr.Recognizer()
-                with sr.AudioFile(wav_io) as source:
-                    audio = recognizer.record(source)
-                    
+            raw = b"".join(frames)
+
+            wav_buf = io.BytesIO()
+            with wave.open(wav_buf, "wb") as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(self._pa.get_sample_size(pyaudio.paInt16))
+                wf.setframerate(16000)
+                wf.writeframes(raw)
+            wav_buf.seek(0)  # rewind AFTER wave.open closes
+
+            recognizer = sr.Recognizer()
+            with sr.AudioFile(wav_buf) as source:
+                audio = recognizer.record(source)
+
             text = recognizer.recognize_google(audio).lower().strip()
             if text:
                 print(f"  [Voice] Heard: \"{text}\"")
-                self._dispatch(text)
+                now = time.time()
+                if now - self._last_cmd >= 0.5:
+                    self._last_cmd = now
+                    self.on_speech(text)
+
         except sr.UnknownValueError:
-            pass
+            print("  [Voice] Could not understand - speak clearly and try again.")
+        except sr.RequestError as e:
+            print(f"  [Voice] Google STT error (check internet): {e}")
         except Exception as e:
-            print(f"  [Voice] Process Error: {e}")
+            print(f"  [Voice] Processing error: {e}")
 
-    def stop(self):
-        self._recording = False
-        if self._stream:
-            try:
-                self._stream.stop_stream()
-                self._stream.close()
-            except: pass
-        if self._pa:
-            try:
-                self._pa.terminate()
-            except: pass
-
-    def _dispatch(self, text):
-        now = time.time()
-        if now - self._last_cmd < self._cooldown:
-            return
-        self._last_cmd = now
-        self.on_speech(text)
-
+    # Legacy stubs
     def start(self): pass
     def trigger_ptt(self): pass
-
-
-

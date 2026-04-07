@@ -2,13 +2,13 @@
 
 # 🦯 Visiona AI
 
-### The Intelligent Spatial Guide for the Visually Impaired
+### Intelligent Assistive Navigation for the Visually Impaired
 
-*Real-time object detection · Monocular depth estimation · LLM reasoning · Voice interaction · GPS navigation*n*
+*Real-time object detection · Monocular depth estimation · LLM reasoning · Voice interaction · GPS navigation*
 
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
 [![YOLOv8](https://img.shields.io/badge/YOLOv8n-Ultralytics-8A2BE2?style=flat-square)](https://ultralytics.com)
-[![Depth Anything V2](https://img.shields.io/badge/Depth_Anything_V2-HggingFace-FFD21E?style=flat-square)
+![Depth Anything V2](https://img.shields.io/badge/Depth_Anything_V2-HuggingFace-FFD21E?style=flat-square)
 ![LangChain](https://img.shields.io/badge/LangChain-Groq_LLaMA3-00A67E?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-22C55E?style=flat-square)
 
@@ -16,13 +16,13 @@
 
 ---
 
-## Overview
+## Overview 🚀
 
-Visiona AI is a real-time assistive navigation system for blind and visually impaired users. It processes live camera feeds, detects and tracks nearby objects, estimates their distance using monocular depth estimation, and delivers clear spoken audio guidance — entirely hands-free.
+Visiona AI is a real-time assistive navigation platform for blind and visually impaired users. It processes live camera feeds, detects and tracks surrounding objects, estimates distance from a single RGB camera, and delivers concise spoken guidance — entirely hands-free.
 
-The user speaks naturally. Visiona listens, reasons, and responds.
+Users speak naturally; Visiona listens, reasons, and responds with context-aware audio.
 
-No stereo cameras. No LiDAR. No special hardware. Just a standard RGB camera and a laptop.
+No stereo cameras. No LiDAR. No custom sensors. Just a standard RGB camera and a modern laptop.
 
 ---
 
@@ -40,46 +40,46 @@ No stereo cameras. No LiDAR. No special hardware. Just a standard RGB camera and
 
 ## Features
 
-**Spatial Awareness**
-- Detects 80+ object classes in real time using YOLOv8n
-- Estimates metric distance using Depth Anything V2 (monocular, no special hardware)
-- Tracks objects across frames with a ByteTrack IoU tracker
-- Computes per-object speed, motion direction, and time-to-collision
+**🧭 Spatial Awareness**
+- 🔍 Detects 80+ object classes in real time using YOLOv8n
+- 📏 Estimates metric distance using Depth Anything V2 (monocular, no special hardware)
+- 🧷 Tracks objects across frames with a ByteTrack IoU tracker
+- ⚡ Computes per-object speed, motion direction, and time-to-collision
 
-**Intelligent Audio Guidance**
-- Speaks compact, natural descriptions: "2 persons ahead", "Group of cars left"
-- Priority queue (max-heap) ensures the most dangerous object is always announced first
-- Dynamic threat scoring: distance × object weight × approach speed × TTC
-- Penalty heatmap prevents the same direction from monopolizing audio
-- Proximity beep alerts with frequency scaling by distance
+**🔊 Intelligent Audio Guidance**
+- 🗣️ Speaks compact, natural descriptions: "2 persons ahead", "Group of cars left"
+- 📌 Priority queue (max-heap) ensures the most dangerous object is announced first
+- ⚠️ Dynamic threat scoring: distance × object weight × approach speed × TTC
+- 🌡️ Penalty heatmap prevents one direction from monopolizing audio
+- 🔔 Proximity beep alerts with frequency scaling by distance
 
-**Voice Interaction (Push-To-Talk)**
+**🎙️ Voice Interaction (Push-To-Talk)**
 - Hold `V` to speak a general command or question
 - Hold `G` to request GPS navigation
 - Zero-latency mic pre-warming — no activation delay
-- Audio ducking: speech volume drops to 0% while mic is open
+- Audio ducking: speech volume lowers while the mic is open
 
-**LLM Reasoning (Groq LLaMA 3.3 70B)**
+**🧠 LLM Reasoning (Groq LLaMA 3.3 70B)**
 - Routes voice commands to the correct tool automatically
-- Answers questions about the current scene and recent history
+- Answers questions about the current scene and recent activity
 - Sets persistent goals ("I need water") and proactively alerts when relevant objects appear
-- Confirmation system: asks "Asking for water?" before executing ambiguous commands
-- Graceful offline fallback when API key is missing
+- Confirmation system asks before executing ambiguous requests
+- Graceful offline fallback when the API key is missing
 
-**Memory System**
-- 15-minute rolling visual memory of all detected objects
-- Custom object labeling: "This is my water bottle" remembered by alias
-- Goal system: tracks what the user needs and scans for matching objects
+**🗂️ Memory System**
+- 15-minute rolling visual memory of detected objects
+- Custom object labeling: "This is my water bottle" saved as an alias
+- Goal system tracks user needs and scans for matching items
 
-**GPS Navigation**
+**🧭 GPS Navigation**
 - Google Maps walking directions via voice command
 - Selects shortest route from multiple alternatives
 - Returns step-by-step instructions as spoken audio
 
-**Multi-Camera Support**
+**📷 Multi-Camera Support**
 - Up to 4 directional feeds: FRONT, LEFT, RIGHT, BACK
 - Unified 2x2 grid HUD display
-- Each feed processed independently, shared YOLO model
+- Each feed processed independently with a shared YOLO model
 
 ---
 
@@ -105,7 +105,7 @@ No stereo cameras. No LiDAR. No special hardware. Just a standard RGB camera and
 ## Project Structure
 
 ```
-visiona/
+VISIONA/
 ├── main.py                         Entry point — camera feeds, main loop, PTT
 ├── core/
 │   ├── config.py                   All settings — single source of truth
@@ -253,12 +253,12 @@ MAPS_API_KEY="your_google_maps_api_key_here"
 **4. Run**
 
 ```bash
-On first run, Depth Anything V2 downloads ~100MB of model weights (cached after that).
+python main.py
+```
+
+> On first run, Depth Anything V2 downloads ~100MB of model weights (cached after that).
 
 The default config uses `sample-vid/sample3.mp4`. To use a live webcam, set `SOURCES = {"FRONT": 0}` in `core/config.py`.
-
-> Windows note: If `pyaudio` fails, run `pip install pipwin && pipwin install pyaudio`
-On first run, Depth Anything V2 downloads ~100MB of model weights (cached after that).
 
 > Windows note: If `pyaudio` fails, run `pip install pipwin && pipwin install pyaudio`
 
@@ -406,15 +406,10 @@ Every session saved to `logs/session_YYYYMMDD_HHMMSS.jsonl`:
 - [ ] Wearable camera support (glasses mount)
 - [ ] Mobile app wrapper (Android/iOS)
 - [ ] Offline LLM fallback (Ollama)
-## Author
-
-**Author:** _(your name)_
-**Email:** _(your email)_
-**GitHub:** _(your github)_
 
 ## Author
 
-**Author:** Paavan Siri VArdhan Narava 
+**Author:** Paavan Siri VArdhan Narava
 **Email:** paavansirivardhannarava@gmail.com
  
 ---

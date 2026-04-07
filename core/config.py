@@ -1,8 +1,3 @@
-import os
-from dotenv import load_dotenv
-load_dotenv()
-
-
 class Config:
     """Centralized configuration — single source of truth."""
 
@@ -12,7 +7,7 @@ class Config:
     #  Set to None to disable a direction.
     # ------------------------------------------------------------------ #
     SOURCES = {
-        "FRONT": "sample-vid/sample3.mp4",
+        "FRONT": "sample-vid/sample1.mp4",
         "LEFT":  None,
         "RIGHT": None,
         "BACK":  None,
@@ -27,23 +22,16 @@ class Config:
     FRAME_SKIP     = 2
 
     # ------------------------------------------------------------------ #
-    #  Monocular Depth (Depth Anything V2 via HuggingFace Transformers)
-    # ------------------------------------------------------------------ #
-    DEPTH_MODEL_ID      = "depth-anything/Depth-Anything-V2-Small-hf"
-    MIDAS_DEFAULT_SCALE = 2000.0   # scale / midas_val = metres; tuned for typical scenes
-    DEPTH_SMOOTH_FRAMES = 5
-
-    # ------------------------------------------------------------------ #
-    #  Distance Filtering
-    #  1 step ≈ 0.75 metres
+    #  Distance Filtering (Step-Based for Mobile)
+    #  1 step ≈ 2.5 feet ≈ 0.75 meters
     # ------------------------------------------------------------------ #
     METERS_PER_STEP = 0.75
-    MAX_DISTANCE_M  = 10.0 * METERS_PER_STEP   # ~7.5 m
-    CONSIDER_MAX_M  = 7.0  * METERS_PER_STEP   # ~5.25 m
-    HIGH_PRIORITY_M = 1.5  * METERS_PER_STEP   # ~1.125 m
+    MAX_DISTANCE_M  = 10.0 * METERS_PER_STEP  # ~7.5m (10 steps)
+    CONSIDER_MAX_M  = 7.0 * METERS_PER_STEP   # ~5.25m (7 steps)
+    HIGH_PRIORITY_M = 3.0 * METERS_PER_STEP   # ~2.25m (3 steps)
 
     # ------------------------------------------------------------------ #
-    #  Heuristic fallback (used when depth model unavailable)
+    #  Heuristic fallback (used when MiDaS unavailable)
     # ------------------------------------------------------------------ #
     FOCAL_LENGTH_PX     = 700
     AVG_OBJECT_WIDTH_CM = 30
@@ -55,22 +43,14 @@ class Config:
     }
 
     # ------------------------------------------------------------------ #
-    #  API Keys (loaded from .env)
+    #  Environment variables (API Keys)
     # ------------------------------------------------------------------ #
-    GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
-    MAPS_API_KEY = os.getenv("MAPS_API_KEY", "")
-
-    # ------------------------------------------------------------------ #
-    #  AI Reasoning (LangChain + Groq)
-    # ------------------------------------------------------------------ #
-    LLM_MODEL       = "llama-3.3-70b-versatile"
-    LLM_TEMPERATURE = 0.1
-    LLM_COOLDOWN    = 5.0
-
-    # ------------------------------------------------------------------ #
-    #  Hardware
-    # ------------------------------------------------------------------ #
-    MIC_DEVICE_INDEX = None   # Set to int (e.g. 1) if default mic fails
+    import os
+    from dotenv import load_dotenv
+    load_dotenv()
+    
+    GROQ_API_KEY  = os.getenv("GROQ_API_KEY", "")
+    MAPS_API_KEY  = os.getenv("MAPS_API_KEY", "")
 
     # ------------------------------------------------------------------ #
     #  Object Grouping
@@ -81,15 +61,16 @@ class Config:
     #  Threat Scoring & Penalty Heatmap
     # ------------------------------------------------------------------ #
     OBJECT_PRIORITY = {
-        "person": 12, "child": 12,
+        "person": 10, "child": 10,
         "car": 9, "truck": 9, "bus": 9, "motorcycle": 8, "bicycle": 7,
         "dog": 6, "cat": 5,
         "chair": 3, "dining table": 3, "bottle": 2, "cup": 2,
     }
-    DEFAULT_PRIORITY      = 1
-    THREAT_HIGH_THRESHOLD = 50.0
-    PENALTY_APPLY         = 30.0
-    PENALTY_DECAY         = 3.0
+    DEFAULT_PRIORITY = 1
+    
+    THREAT_HIGH_THRESHOLD = 70.0  # Above this score is an Extreme Threat
+    PENALTY_APPLY         = 30.0  # Points deducted from a direction when spoken
+    PENALTY_DECAY         = 3.0   # Points recovered per second
 
     # ------------------------------------------------------------------ #
     #  Alert beep levels  (distance_m, freq_hz, duration_ms)
@@ -104,8 +85,8 @@ class Config:
     #  Speech
     # ------------------------------------------------------------------ #
     SPEECH_RATE       = 185
-    SPEECH_COOLDOWN   = 2.5    # Warning / priority repeat delay (seconds)
-    SEMANTIC_COOLDOWN = 5.0    # Normal object repeat delay (seconds)
+    SPEECH_COOLDOWN   = 2.5   # Warning repeat delay
+    SEMANTIC_COOLDOWN = 12.0  # Normal object repeat delay (Anti-Spam)
     MAX_MESSAGES      = 3
 
     # ------------------------------------------------------------------ #
@@ -121,6 +102,20 @@ class Config:
     # ------------------------------------------------------------------ #
     LOG_ENABLED = True
     LOG_DIR     = "logs"
+
+    # ------------------------------------------------------------------ #
+    #  LLM (optional)
+    # ------------------------------------------------------------------ #
+    LLM_MODEL       = "llama3-70b-8192"
+    LLM_TEMPERATURE = 0
+    LLM_COOLDOWN    = 5.0
+
+    # ------------------------------------------------------------------ #
+    #  Monocular Depth (Depth Anything v2)
+    # ------------------------------------------------------------------ #
+    DEPTH_MODEL_ID      = "depth-anything/Depth-Anything-V2-Small-hf"
+    MIDAS_DEFAULT_SCALE = 1.0
+    DEPTH_SMOOTH_FRAMES = 5
 
     # ------------------------------------------------------------------ #
     #  Kalman Filter
@@ -152,4 +147,4 @@ class Config:
     # ------------------------------------------------------------------ #
     #  Performance
     # ------------------------------------------------------------------ #
-    FRAME_BUDGET_MS = 2000
+    FRAME_BUDGET_MS = 2000  # MiDaS on CPU needs up to 200ms, YOLO ~100ms
