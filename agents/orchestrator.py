@@ -4,20 +4,18 @@ from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 
 from agents.tools.vision_tools import (
-    query_past_detections, summarize_scene, set_search_intent,
+    query_past_detections, summarize_scene, set_search_intent, 
     calculate_route, save_object_signature, get_objects_near,
     register_search_intent_callback, set_persistent_goal,
     mark_goal_completed, lower_goal_candidate_priority
 )
 
-
 class AgentEngine:
     """
-    Central reasoning engine. Routes voice commands to LangChain tools
-    and synthesizes spoken responses via Groq LLaMA 3.3 70B.
-    No confirmation step — commands execute immediately.
+    The Central Brain. This engine loads the 10 Agent Tool workflows and 
+    maps Groq LLM natural language queries to execute the specific tool code.
+    Uses pure LangChain Core Tool Binding (FAANG Standard).
     """
-
     def __init__(self, tts_callback=None, search_intent_callback=None):
         self.tts = tts_callback
         self.trigger_search = search_intent_callback
@@ -25,16 +23,18 @@ class AgentEngine:
         self.tools_map = {}
 
         if not Config.GROQ_API_KEY:
-            print("  [Agent] Groq disabled — GROQ_API_KEY missing in .env")
+            print("  [Agent] LangChain/Groq disabled — Missing GROQ_API_KEY in .env")
             return
 
-        print("  [Agent] Initializing LangChain reasoning engine...")
+        print("  [Agent] Initializing Pure LangChain Core Reasoning Router...")
         try:
+            model_name = getattr(Config, "LLM_MODEL", "llama-3.3-70b-versatile")
             self.llm = ChatGroq(
-                temperature=Config.LLM_TEMPERATURE,
-                api_key=Config.GROQ_API_KEY,
-                model_name=Config.LLM_MODEL,
+                temperature=Config.LLM_TEMPERATURE, 
+                api_key=Config.GROQ_API_KEY, 
+                model_name=model_name
             )
+            
             self.tools = [
                 query_past_detections,
                 summarize_scene,
@@ -44,87 +44,95 @@ class AgentEngine:
                 get_objects_near,
                 set_persistent_goal,
                 mark_goal_completed,
-                lower_goal_candidate_priority,
+                lower_goal_candidate_priority
             ]
             self.tools_map = {t.name: t for t in self.tools}
             register_search_intent_callback(self.trigger_search)
             self.llm_with_tools = self.llm.bind_tools(self.tools)
-            print("  [Agent] Ready.")
+            
         except Exception as e:
-            print(f"  [Agent] Init error: {e}")
+            print(f"  [Agent] Integration Error: {e}")
 
     def process_voice_command(self, question: str, raw_scene_context: str):
         """
-        Process a voice command immediately — no confirmation step.
-        Routes to tools if needed, then speaks the response.
+        Takes the user's voice command, current scene context, and historical memory,
+        and provides a natural language response.
         """
         if not self.llm_with_tools:
             if self.tts:
-                self.tts("Reasoning engine offline. Please add a Groq API key.")
+                self.tts("My reasoning systems are currently offline. Please add an API key.")
             return
 
-        # Direct memory hit — skip LLM for simple "where is X" queries
+        # Fetch historical memory context
         from core.memory import memory_bank, goal_system
+        history_context = memory_bank.get_recent_history()
+        goal_context = goal_system.get_goal_summary()
+
+        # Quick check for custom objects in memory before calling LLM
         custom_mem = memory_bank.find_custom_object(question)
         if custom_mem and "where" in question.lower():
-            print(f"  [Agent] Memory hit: {custom_mem}")
-            if self.tts:
-                self.tts(custom_mem)
-            return
-
-        history_context = memory_bank.get_recent_history()
-        goal_context    = goal_system.get_goal_summary()
+             print(f"  [Agent] Direct memory hit: {custom_mem}")
+             if self.tts: self.tts(custom_mem)
+             return
 
         prompt_str = (
-            "You are Visiona AI, a spatial guide for a blind user. Be brief and direct.\n\n"
-            f"SCENE: {raw_scene_context}\n"
+            "You are Visiona AI, a natural spatial guide for the blind. You reason like a human.\n\n"
+            f"SPATIAL DATA: {raw_scene_context}\n"
             f"MEMORY: {history_context}\n"
-            f"GOALS: {goal_context}\n\n"
+            f"PERSISTENT GOALS: {goal_context}\n\n"
             f"USER SAID: '{question}'\n\n"
-            "RULES:\n"
-            "1. Act immediately — do not ask for confirmation.\n"
-            "2. Use tools when needed (search, memory, GPS, goals).\n"
-            "3. Keep your spoken response to one short sentence.\n"
-            "4. If describing the scene, be compact: '2 persons ahead', 'Chair right'.\n"
-            "5. If the user needs something (water, rest, exit), call set_persistent_goal."
+            "INSTRUCTIONS:\n"
+            "1. DYNAMIC INTENT: If the user needs anything (rest, water, coffee, exit), use 'set_persistent_goal'.\n"
+            "2. SHORTEST PATH NAVIGATION: If the user asks for directions or to find a place, use 'calculate_route'. The system will automatically find the SHORTEST walking path using their live location.\n"
+            "3. BE PROACTIVE & VERBAL: When you provide directions, speak them EXACTLY as they are given to you. If you see a busy road (many vehicles), warn the user immediately.\n"
+            "4. TOOL USAGE: Use tools for everything. If a goal is active and you see a candidate, guide the user to it.\n"
+            "5. NATURAL TONE: Speak like a helpful friend. Provide a single, comforting, and EXTREMELY PRECISE sentence as your final response."
         )
 
         messages = [
             SystemMessage(content=(
-                "You are a helpful spatial guide for a blind user. "
-                "Act on every request immediately without asking for confirmation. "
-                "Use tools when appropriate. Respond in one short sentence."
+                "You are a helpful spatial guide. You analyze raw vision data and memory to offer proactive assistance. "
+                "If the user sounds tired, hungry, or lost, you scan your data for chairs, food, or exits and guide them. "
+                "Your tone is comforting and your responses are always dynamic and spatially relevant."
             )),
-            HumanMessage(content=prompt_str),
+            HumanMessage(content=prompt_str)
         ]
 
         try:
+            # 1. Base Invoke (Agent thinks and possibly triggers tools)
             ai_msg = self.llm_with_tools.invoke(messages)
+            messages.append(ai_msg)
 
-            # Execute any tool calls immediately
-            if getattr(ai_msg, "tool_calls", None):
-                messages.append(ai_msg)
+            # 2. Tool Execution Loop
+            if getattr(ai_msg, 'tool_calls', None):
                 for tool_call in ai_msg.tool_calls:
-                    tool = self.tools_map.get(tool_call["name"])
-                    if tool:
-                        print(f"  [Agent] Tool: {tool_call['name']}")
-                        output = tool.invoke(tool_call.get("args", {}))
-                        messages.append(
-                            ToolMessage(tool_call_id=tool_call["id"], content=str(output))
-                        )
-
-                # Synthesize final response from tool results
-                final = self.llm_with_tools.invoke(messages)
-                text  = final.content
+                    selected_tool = self.tools_map.get(tool_call["name"])
+                    print(f"  [Agent] Tool call received: {tool_call}")
+                    if selected_tool:
+                        print(f"  [Agent] Triggered Workflow Tool: {tool_call['name']}")
+                        # LangChain passes arguments as a dict, not a list
+                        tool_args = tool_call.get("args", {})
+                        if isinstance(tool_args, dict) and tool_args:
+                            tool_output = selected_tool.invoke(tool_args)
+                        else:
+                            tool_output = selected_tool.invoke(tool_args)
+                        messages.append(ToolMessage(tool_call_id=tool_call["id"], content=str(tool_output)))
+                
+                # 3. Final Answer Synthesis
+                # Use the base LLM for synthesis to ensure we get a text response
+                final_response = self.llm.invoke(messages)
+                text = final_response.content
             else:
                 text = ai_msg.content
 
             if text:
-                print(f"  [Agent] → {text}")
+                print(f"  [Agent] Responded: {text}")
                 if self.tts:
                     self.tts(text)
+            else:
+                print("  [Agent] Warning: LLM returned an empty response.")
 
         except Exception as e:
-            print(f"  [Agent] Error: {e}")
+            print(f"  [Agent] Inference Error: {e}")
             if self.tts:
-                self.tts("I encountered an error. Please try again.")
+                self.tts("I am currently experiencing an error in my reasoning brain.")

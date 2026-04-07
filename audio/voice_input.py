@@ -67,7 +67,7 @@ class VoiceInputEngine:
             self._active = True
             self._frames = []
         self.on_listening(True)
-        print("  [Voice] Listening...", end="\r")
+        print("  [Voice] Listening...")  # Show listening status clearly
 
     def stop_recording(self):
         """Stop saving frames and process the buffer. Called when V/G key is released."""
@@ -83,7 +83,7 @@ class VoiceInputEngine:
             print("  [Voice] No audio captured.")
             return
 
-        print("  [Voice] Processing...   ", end="\r")
+        print("  [Voice] Processing...")
         threading.Thread(target=self._process, args=(captured,), daemon=True).start()
 
     def stop(self):

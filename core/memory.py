@@ -119,7 +119,7 @@ class GoalSystem:
             self._goals[intent] = {"candidates": [intent], "priority": "high", "active": True, "timestamp": time.time()}
             candidates = [intent]
             
-        print(f"  [Goal] New goal active: '{matched_goal or intent}'. Candidates: {candidates}")
+        print(f"  [Goal] Active: '{matched_goal or intent}' -> {candidates}")
         return candidates
 
     def get_active_candidates(self) -> List[str]:
@@ -128,7 +128,9 @@ class GoalSystem:
         for g in self._goals.values():
             if g["active"]:
                 all_objs.extend(g["candidates"])
-        return list(set(all_objs))
+        unique_objs = list(set(all_objs))
+        # Only log once when goals change, not every frame
+        return unique_objs
 
     def complete_goal(self, goal_or_candidate: str):
         """Disables a goal if the user has reached it or confirmed it's done."""

@@ -158,11 +158,9 @@ class VisionaApp:
         try:
             if hasattr(key, 'char'):
                 if key.char == 'v' and self._mic_mode == "LLM":
-                    if self._mic_active:
-                        self.voice.stop_recording()
+                    self.voice.stop_recording()
                 elif key.char == 'g' and self._mic_mode == "MAPS":
-                    if self._mic_active:
-                        self.voice.stop_recording()
+                    self.voice.stop_recording()
         except AttributeError:
             pass
 
@@ -351,35 +349,65 @@ class VisionaApp:
         if not candidates:
             return
 
+        # Track which goals we've announced recently to avoid spam
+        if not hasattr(self, '_announced_goals'):
+            self._announced_goals = {}
+        
+        import time
+        now = time.time()
+
         for d in detections:
-            if d.label.lower() in candidates:
-                # We found a goal-related object!
-                if d.label.lower() == "grocery store":
-                    msg = "I've spotted a grocery store nearby. Would you like to stop here for water or food?"
-                else:
-                    dist = f"{d.distance_ft} feet" if d.distance_ft else "nearby"
-                    dir_s = {"FRONT": "in front", "LEFT": "on the left", "RIGHT": "on the right", "BACK": "behind you"}.get(d.direction, "")
-                    msg = f"I see a {d.label} {dist} {dir_s}. This might help your goal."
+            label_lower = d.label.lower()
+            if label_lower in [c.lower() for c in candidates]:
+                # Check if we've announced this specific object recently
+                announce_key = f"{label_lower}_{d.direction}"
+                last_announce = self._announced_goals.get(announce_key, 0)
                 
-                # Proactively speak it if not recently mentioned
-                self.speech.speak(msg, priority=True)
+                # Only announce every 10 seconds for the same object type in same direction
+                if now - last_announce < 10.0:
+                    continue
+                
+                # We found a goal-related object!
+                dist = f"{d.distance_ft} feet" if d.distance_ft else "nearby"
+                dir_s = {"FRONT": "in front", "LEFT": "on the left", "RIGHT": "on the right", "BACK": "behind you"}.get(d.direction, "")
+                msg = f"Found a {label_lower}, {dist} {dir_s}."
+                
+                # Speak it immediately with high priority
+                self.speech.speak(msg, priority=True, bypass_cooldown=True)
+                self._announced_goals[announce_key] = now
                 break
 
-        # Target seeking
-        if self._search_intent:
+        # Target seeking (for explicit search commands)
+        if self._search_intent or (hasattr(self, '_search_intents') and self._search_intents):
             self._seek(detections)
 
     def _seek(self, detections: List[Detection]):
-        matches = [d for d in detections if self._search_intent in d.label.lower()]
-        if not matches:
-            return   # keep searching silently
-        t = matches[0]
-        dist = f"{t.distance_ft} feet" if t.distance_ft else "nearby"
-        dir_s = {"FRONT": "in front", "LEFT": "on the left",
-                 "RIGHT": "on the right", "BACK": "behind you"}.get(t.direction, "")
-        self.speech.speak(f"Found {t.label}. {dist} {dir_s}.", priority=True, bypass_cooldown=True)
-        self._search_intent = None
-        self._state = "GUIDING"
+        """Check if any detected objects match active search intents."""
+        if not hasattr(self, '_search_intents'):
+            self._search_intents = []
+            
+        # Check all search intents, not just one
+        all_intents = self._search_intents + ([self._search_intent] if self._search_intent else [])
+        
+        for intent in all_intents:
+            if not intent:
+                continue
+            matches = [d for d in detections if intent.lower() in d.label.lower()]
+            if matches:
+                t = matches[0]
+                dist = f"{t.distance_ft} feet" if t.distance_ft else "nearby"
+                dir_s = {"FRONT": "in front", "LEFT": "on the left",
+                         "RIGHT": "on the right", "BACK": "behind you"}.get(t.direction, "")
+                self.speech.speak(f"Found {t.label}. {dist} {dir_s}.", priority=True, bypass_cooldown=True)
+                
+                # Remove this intent from the list
+                if intent in self._search_intents:
+                    self._search_intents.remove(intent)
+                if intent == self._search_intent:
+                    self._search_intent = None
+                    
+                self._state = "GUIDING"
+                return  # Announce one at a time
 
     # ------------------------------------------------------------------
     # Voice callbacks
@@ -392,8 +420,10 @@ class VisionaApp:
             self.speech.duck()    # stops and clears speech
             self.alert.pause()    # stops beep alerts
         else:
-            self.speech.unduck()  # restores volume
-            self.alert.resume()   # resumes beep alerts
+            # Immediately resume when key is released
+            # Voice processing happens in background thread
+            self.speech.unduck()
+            self.alert.resume()
 
     def _on_speech(self, text: str):
         """Called when any speech is captured. Routes to LLM or Maps based on mode."""
@@ -423,10 +453,27 @@ class VisionaApp:
             self.speech.speak(f"I heard you say: {text}. Reasoning engine is offline.", bypass_cooldown=True)
 
     def _on_intent(self, intent: str):
+        """Called when agent triggers a search. Stores intent for matching in _seek()."""
         print(f"  [Voice] Tool Triggered Search: {intent}")
-        self._search_intent = intent
+        
+        # First check if the object is already visible in current detections
+        if self._all_dets:
+            for d in self._all_dets:
+                if intent.lower() in d.label.lower():
+                    # Found it immediately!
+                    dist = f"{d.distance_ft} feet" if d.distance_ft else "nearby"
+                    dir_s = {"FRONT": "in front", "LEFT": "on the left",
+                             "RIGHT": "on the right", "BACK": "behind you"}.get(d.direction, "")
+                    self.speech.speak(f"There's a {d.label} {dist} {dir_s}.", priority=True, bypass_cooldown=True)
+                    return  # Don't add to search list since we found it
+        
+        # Not currently visible, add to search list
+        if not hasattr(self, '_search_intents'):
+            self._search_intents = []
+        if intent not in self._search_intents:
+            self._search_intents.append(intent)
+        self._search_intent = intent  # Keep for backward compatibility
         self._state = "SEARCHING"
-        self.speech.speak(f"Searching for {intent}.", priority=True, bypass_cooldown=True)
 
 
     def _get_full_spatial_context(self) -> str:
