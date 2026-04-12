@@ -70,7 +70,7 @@ No stereo cameras. No LiDAR. No custom sensors. Just a standard RGB camera and a
 **🗂️ Memory System**
 - 15-minute rolling visual memory of detected objects
 - Custom object labeling: "This is my water bottle" saved as an alias
-- **Real-Time Object "Training"**: Mathematical MobileNetV3 vector embeddings immediately swap generic YOLO labels (e.g. "person") for your custom aliases (e.g. "Ramesh") on-the-fly, requiring zero fine-tuning epochs and fully avoiding catastrophic forgetting
+- **Real-Time Object "Training"**: Mathematical MobileNetV3 vector embeddings immediately swap generic YOLO labels (e.g. "person") for your custom aliases (e.g. "Paavan") on-the-fly, requiring zero fine-tuning epochs and fully avoiding catastrophic forgetting
 - Goal system tracks user needs and scans for matching items
 
 **🧭 GPS Navigation**
@@ -175,7 +175,7 @@ VISIONA/
 │                                      kinematics/            │
 │  • ByteTrack assigns persistent IDs via IoU matching        │
 │  • FeatureDB extracts crop embeddings & hot-swaps custom    │
-│    labels (e.g. "person" -> "Ramesh") via Cosine Sim        │
+│    labels (e.g. "person" -> "Paavan") via Cosine Sim        │
 │  • Kalman filter smooths depth per track, rejects spikes    │
 │  • Speed = ΔDistance / ΔTime  (metres per second)           │
 │  • TTC  = Distance / Speed    (EMA smoothed)                │
