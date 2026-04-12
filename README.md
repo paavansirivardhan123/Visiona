@@ -56,6 +56,7 @@ No stereo cameras. No LiDAR. No custom sensors. Just a standard RGB camera and a
 **🎙️ Voice Interaction (Push-To-Talk)**
 - Hold `V` to speak a general command or question
 - Hold `G` to request GPS navigation
+- Hold `R` to engage "Remember Mode" — point the camera at any custom object/person to capture exact image data
 - Zero-latency mic pre-warming — no activation delay
 - Audio ducking: speech volume lowers while the mic is open
 
@@ -69,6 +70,7 @@ No stereo cameras. No LiDAR. No custom sensors. Just a standard RGB camera and a
 **🗂️ Memory System**
 - 15-minute rolling visual memory of detected objects
 - Custom object labeling: "This is my water bottle" saved as an alias
+- **Real-Time Object "Training"**: Mathematical MobileNetV3 vector embeddings immediately swap generic YOLO labels (e.g. "person") for your custom aliases (e.g. "Ramesh") on-the-fly, requiring zero fine-tuning epochs and fully avoiding catastrophic forgetting
 - Goal system tracks user needs and scans for matching items
 
 **🧭 GPS Navigation**
@@ -99,6 +101,7 @@ No stereo cameras. No LiDAR. No custom sensors. Just a standard RGB camera and a
 | GPS Navigation | Google Maps Directions API |
 | Video Processing | OpenCV |
 | Deep Learning | PyTorch |
+| Custom Recognition | MobileNetV3 Vector Embeddings (torchvision / Cosine Similarity) |
 
 ---
 
@@ -112,6 +115,7 @@ VISIONA/
 │   ├── detection.py                Detection dataclass with threat_score property
 │   ├── priority_queue.py           Max-heap priority queue
 │   ├── memory.py                   VisionMemory (15-min rolling) + GoalSystem
+│   ├── recognition.py              MobileNetV3 FeatureDB (custom object matching)
 │   └── logger.py                   JSONL session telemetry
 ├── perception/
 │   ├── vision.py                   YOLO + async depth pipeline
@@ -170,6 +174,8 @@ VISIONA/
 │  STAGE 3 — Tracking + Kinematics     perception/tracker.py  │
 │                                      kinematics/            │
 │  • ByteTrack assigns persistent IDs via IoU matching        │
+│  • FeatureDB extracts crop embeddings & hot-swaps custom    │
+│    labels (e.g. "person" -> "Ramesh") via Cosine Sim        │
 │  • Kalman filter smooths depth per track, rejects spikes    │
 │  • Speed = ΔDistance / ΔTime  (metres per second)           │
 │  • TTC  = Distance / Speed    (EMA smoothed)                │
@@ -272,6 +278,7 @@ The default config uses `sample-vid/sample3.mp4`. To use a live webcam, set `SOU
 |---|---|
 | Hold `V` | Open mic for general AI command or question |
 | Hold `G` | Open mic for GPS navigation request |
+| Hold `R` | Open mic for Remember Mode to capture and learn custom objects |
 | `ESC` | Quit |
 
 ### Voice Commands

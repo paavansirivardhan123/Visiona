@@ -3,7 +3,7 @@ name = "Visiona"
 version = "2.0.0"
 description = "Visiona — Real-time assistive navigation for visually impaired users"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11, <3.13"
 dependencies = [
     "numpy==1.26.4",
     "opencv-python==4.9.0.80",
@@ -15,7 +15,7 @@ dependencies = [
     "langchain",
     "langchain-groq",
     "speechrecognition>=3.10.0",
-    "pyaudio>=0.2.13",
+    "pyaudio>=0.2.14",
     "timm>=1.0.26",
     "transformers>=5.5.0",
     "pynput>=1.8.1",

@@ -53,6 +53,43 @@ class AgentEngine:
         except Exception as e:
             print(f"  [Agent] Integration Error: {e}")
 
+    def extract_memory_label(self, text: str) -> dict:
+        """
+        Takes raw user speech like 'remember this, this is my wallet'
+        and extracts the pure label ('my wallet') and the COCO base_class ('handbag').
+        """
+        if not self.llm:
+            return None
+            
+        prompt = (
+            f"The user is pointing their camera at something and said: '{text}'\n"
+            "You must map their speech to two things in JSON format:\n"
+            "1. 'alias': The exact human-readable name of the object or person. Fix grammar/spelling. If input is 'remember this he is ramesh', alias is 'Ramesh'. If input is 'it is my wallet', alias is 'my wallet'.\n"
+            "2. 'base_class': The closest matching YOLO COCO class. The valid classes are: person, bicycle, car, motorcycle, airplane, bus, train, truck, boat, traffic light, fire hydrant, stop sign, parking meter, bench, bird, cat, dog, horse, sheep, cow, elephant, bear, zebra, giraffe, backpack, umbrella, handbag, tie, suitcase, frisbee, skis, snowboard, sports ball, kite, baseball bat, baseball glove, skateboard, surfboard, tennis racket, bottle, wine glass, cup, fork, knife, spoon, bowl, banana, apple, sandwich, orange, broccoli, carrot, hot dog, pizza, donut, cake, chair, couch, potted plant, bed, dining table, toilet, tv, laptop, mouse, remote, keyboard, cell phone, microwave, oven, toaster, sink, refrigerator, book, clock, vase, scissors, teddy bear, hair drier, toothbrush.\n"
+            "If it's 'Ramesh' or 'Sweater', base_class is 'person'. If 'my wallet', base_class is 'handbag' or 'backpack'.\n"
+            "Output ONLY valid JSON like: {\"alias\": \"my wallet\", \"base_class\": \"handbag\"}\n"
+            "Do not include markdown ticks."
+        )
+        
+        try:
+            response = self.llm.invoke([HumanMessage(content=prompt)])
+            content = response.content.strip()
+            
+            # Clean possible markdown block formatting
+            if content.startswith("```json"):
+                content = content[7:]
+            if content.startswith("```"):
+                content = content[3:]
+            if content.endswith("```"):
+                content = content[:-3]
+                
+            import json
+            data = json.loads(content.strip())
+            return data
+        except Exception as e:
+            print(f"  [Agent] Extract Model Error: {e}")
+            return None
+
     def process_voice_command(self, question: str, raw_scene_context: str):
         """
         Takes the user's voice command, current scene context, and historical memory,

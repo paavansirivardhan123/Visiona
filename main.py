@@ -25,6 +25,7 @@ from core.logger import SessionLogger
 # Deep AI / LangChain Brains (Phase 6)
 from agents.orchestrator import AgentEngine
 from core.memory import memory_bank
+from core.recognition import feature_db
 
 
 class CameraFeed:
@@ -97,7 +98,7 @@ class VisionaApp:
         self.speech = SpeechEngine()
         self.logger = SessionLogger()
         self.agent_engine = AgentEngine(
-            tts_callback=lambda x: self.speech.speak(x, priority=True, bypass_cooldown=True),
+            tts_callback=lambda x: self.speech.speak(x, priority=True, bypass_cooldown=True, emergency=True),
             search_intent_callback=self._on_intent
         )
 
@@ -114,11 +115,17 @@ class VisionaApp:
         self._state        = "SCANNING"
         self._last_info    = ""
         self._mic_active   = False
-        self._mic_mode     = "LLM"           # "LLM" or "MAPS"
+        self._mic_mode     = "LLM"           # "LLM", "MAPS", "REMEMBER"
         self._search_intent: Optional[str] = None
         self._running      = True
         self._latest_frames = {}
         self._curiosity_cooldown = 0.0
+
+        self._capture_alias = None
+        self._capture_base_class = None
+        self._capture_count = 0
+        import os
+        os.makedirs("database", exist_ok=True)
         
         self._ai_thread = threading.Thread(target=self._processing_loop, daemon=True)
         self._ai_thread.start()
@@ -151,6 +158,10 @@ class VisionaApp:
                     if not self._mic_active:
                         self._mic_mode = "MAPS"
                         self.voice.start_recording()
+                elif key.char.lower() == 'r':
+                    if not self._mic_active:
+                        self._mic_mode = "REMEMBER"
+                        self.voice.start_recording()
         except AttributeError:
             pass
 
@@ -160,6 +171,8 @@ class VisionaApp:
                 if key.char == 'v' and self._mic_mode == "LLM":
                     self.voice.stop_recording()
                 elif key.char == 'g' and self._mic_mode == "MAPS":
+                    self.voice.stop_recording()
+                elif key.char.lower() == 'r' and self._mic_mode == "REMEMBER":
                     self.voice.stop_recording()
         except AttributeError:
             pass
@@ -225,8 +238,52 @@ class VisionaApp:
                 # We skip FRAME_SKIP manually here if we want, but since it's a background 
                 # thread, we can just process every snapshot.
                 dets = self.vision.detect(frame, direction)
+                # Check for cached identity memory (Label Swapping)
+                fh, fw = frame.shape[:2]
+                for d in dets:
+                    # we only try to identify things if they are reasonably large
+                    x1, y1, x2, y2 = d.box
+                    x1, y1 = max(0, x1), max(0, y1)
+                    x2, y2 = min(fw, x2), min(fh, y2)
+                    w, h = x2 - x1, y2 - y1
+                    if w > 40 and h > 40: # Minimum crop size for decent features
+                        crop = frame[y1:y2, x1:x2]
+                        if crop.size > 0:
+                            matched_alias = feature_db.match(crop)
+                            if matched_alias:
+                                d.base_label = d.label           # Preserve for threat fallback
+                                d.label = matched_alias
+
                 all_dets.extend(dets)
                 self.logger.log_detections(dets, direction)
+
+                # Capture logic
+                if self._capture_count > 0 and self._capture_alias and self._capture_base_class and dets:
+                    # Filter elements by base class
+                    target_dets = [d for d in dets if d.label.lower() == self._capture_base_class.lower()]
+                    
+                    if target_dets:
+                        # Pick the most threatening/prominent object among TARGET objects
+                        best_det = max(target_dets, key=lambda x: x.threat_score)
+                        x1, y1, x2, y2 = best_det.box
+                        fh, fw = frame.shape[:2]
+                        x1, y1 = max(0, x1), max(0, y1)
+                        x2, y2 = min(fw, x2), min(fh, y2)
+                        crop = frame[y1:y2, x1:x2]
+                        if crop.size > 0:
+                            import os
+                            folder = os.path.join("database", self._capture_alias)
+                            os.makedirs(folder, exist_ok=True)
+                            filepath = os.path.join(folder, f"img_{50 - self._capture_count}.jpg")
+                            cv2.imwrite(filepath, crop)
+                            self._capture_count -= 1
+                            if self._capture_count == 0:
+                                print(f"  [Capture] Finished capturing 50 frames for {self._capture_alias}")
+                                self.speech.speak(f"Finished capturing images for {self._capture_alias}. Connecting memory bank.", bypass_cooldown=True, emergency=True)
+                                # Load it into VectorDB Memory live
+                                feature_db.load_alias(self._capture_alias)
+                                self._capture_alias = None
+                                self._capture_base_class = None
                 
             if all_dets:
                 self._all_dets = all_dets
@@ -302,10 +359,11 @@ class VisionaApp:
         # 2.5 Extreme Threat Detection (Emergency Verbal Bypass)
         # If a large/fast object is very close, speak it IMMEDIATELY even if user is talking
         for d in hp:
-            if d.label in ("truck", "bus", "car") and d.distance_m and d.distance_m < 2.5:
+            base_l = getattr(d, 'base_label', d.label)
+            if base_l in ("truck", "bus", "car") and d.distance_m and d.distance_m < 2.5:
                 self.speech.speak(f"Emergency: {d.label} ahead!", emergency=True)
-            elif d.label == "person" and d.distance_m and d.distance_m < 1.0:
-                self.speech.speak("Person very close!", emergency=True)
+            elif base_l == "person" and d.distance_m and d.distance_m < 1.0:
+                self.speech.speak(f"{d.label} very close!", emergency=True)
 
         # 3. Beep (High Priority Alerts)
         self.alert.process(hp)
@@ -439,6 +497,30 @@ class VisionaApp:
                     args=(f"I need walking directions to: {text}", full_context),
                     daemon=True
                 ).start()
+            return
+            
+        if self._mic_mode == "REMEMBER":
+            import threading
+            def _extract_and_capture():
+                if self.agent_engine.llm:
+                    data = self.agent_engine.extract_memory_label(text)
+                    if data and isinstance(data, dict):
+                        alias = data.get("alias")
+                        base_class = data.get("base_class")
+                        if alias and alias.lower() != "none" and alias.lower() != "unknown" and base_class:
+                            self.speech.speak(f"Okay, I will memorize {alias} now. Keep looking at it.", bypass_cooldown=True, emergency=True)
+                            import time
+                            time.sleep(2) # Give user a sec to point the camera
+                            self._capture_alias = alias
+                            self._capture_base_class = base_class
+                            self._capture_count = 50
+                        else:
+                            self.speech.speak("I didn't catch what you wanted me to remember.", bypass_cooldown=True, emergency=True)
+                    else:
+                        self.speech.speak("I didn't catch what you wanted me to remember.", bypass_cooldown=True, emergency=True)
+                else:
+                    self.speech.speak("The reasoning engine is offline.", bypass_cooldown=True, emergency=True)
+            threading.Thread(target=_extract_and_capture, daemon=True).start()
             return
 
         if self.agent_engine.llm_with_tools:

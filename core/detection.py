@@ -56,7 +56,7 @@ class Detection:
         from core.config import Config
         return self.threat_score >= Config.THREAT_HIGH_THRESHOLD
 
-    @property
+    @property # the use of the property decorator is to make the method behave like an attribute
     def area(self) -> int:
         x1, y1, x2, y2 = self.box
         return (x2 - x1) * (y2 - y1)
