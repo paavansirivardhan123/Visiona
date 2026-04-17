@@ -2,9 +2,9 @@ class Config:
     """Centralized configuration."""
 
     SOURCES = {
-        "FRONT": "sample-vid/sample3.mp4",
-        "LEFT":  None,
-        "RIGHT": None,
+        "FRONT": "sample-vid/3Dir/vid1/FRONT.mp4",
+        "LEFT":  "sample-vid/3Dir/vid1/LEFT.mp4",
+        "RIGHT": "sample-vid/3Dir/vid1/RIGHT.mp4",
         "BACK":  None,
     }
 

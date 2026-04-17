@@ -560,17 +560,23 @@ class VisionaApp:
 
     def _get_full_spatial_context(self) -> str:
         """Returns a detailed list of all current detections for the AI reasoning engine."""
+        # Get egomotion context
+        motion_ctx = f"User State: {getattr(self.vision, 'user_state', 'Stationary')} ({getattr(self.vision, 'user_speed', 0.0):.1f} m/s)."
+        
         if not self._all_dets:
-            return "No objects currently detected in view."
+            return f"{motion_ctx} No objects currently detected in view."
         
         ctx_parts = []
         for d in self._all_dets:
             dist = f"{d.distance_m:.1f}m" if d.distance_m else "unknown distance"
             dir_s = {"FRONT": "in front", "LEFT": "on the left", 
                      "RIGHT": "on the right", "BACK": "behind you"}.get(d.direction, d.direction.lower())
-            ctx_parts.append(f"{d.label} at {dist} {dir_s}")
+            
+            # Highlight true independent motion
+            mot_s = f"({d.motion})" if getattr(d, 'motion', None) else ""
+            ctx_parts.append(f"{d.label} at {dist} {dir_s} {mot_s}".strip())
         
-        return " | ".join(ctx_parts)
+        return f"{motion_ctx} Objects: " + " | ".join(ctx_parts)
 
     # ------------------------------------------------------------------
     # HUD extras

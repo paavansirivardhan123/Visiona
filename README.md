@@ -93,6 +93,7 @@ No stereo cameras. No LiDAR. No custom sensors. Just a standard RGB camera and a
 | Depth Estimation | Depth Anything V2 Small (HuggingFace Transformers) |
 | Object Tracking | ByteTrack (IoU-based, pure NumPy) |
 | Noise Reduction | 1D Kalman Filter (per-track) |
+| Egomotion Detection | Optical Flow (OpenCV) |
 | LLM Reasoning | Groq API — LLaMA 3.3 70B Versatile |
 | Agent Framework | LangChain Core (tool binding) |
 | Text-to-Speech | pyttsx3 (SAPI5, offline) |
@@ -102,6 +103,7 @@ No stereo cameras. No LiDAR. No custom sensors. Just a standard RGB camera and a
 | Video Processing | OpenCV |
 | Deep Learning | PyTorch |
 | Custom Recognition | MobileNetV3 Vector Embeddings (torchvision / Cosine Similarity) |
+| Package Management | uv (Python package installer) |
 
 ---
 
@@ -115,10 +117,11 @@ VISIONA/
 │   ├── detection.py                Detection dataclass with threat_score property
 │   ├── priority_queue.py           Max-heap priority queue
 │   ├── memory.py                   VisionMemory (15-min rolling) + GoalSystem
-│   ├── recognition.py              MobileNetV3 FeatureDB (custom object matching)
-│   └── logger.py                   JSONL session telemetry
 ├── perception/
 │   ├── vision.py                   YOLO + async depth pipeline
+│   ├── mono_depth.py               Depth Anything V2 inference + calibration
+│   ├── tracker.py                  ByteTrack IoU tracker with Kalman per track
+│   └── egomotion.py                Optical flow user motion detection
 │   ├── mono_depth.py               Depth Anything V2 inference + calibration
 │   └── tracker.py                  ByteTrack IoU tracker with Kalman per track
 ├── kinematics/
@@ -172,12 +175,18 @@ VISIONA/
                            ▼
 ┌─────────────────────────────────────────────────────────────┐
 │  STAGE 3 — Tracking + Kinematics     perception/tracker.py  │
+│                                      perception/egomotion.py│
 │                                      kinematics/            │
 │  • ByteTrack assigns persistent IDs via IoU matching        │
+│  • Optical Flow detects user motion (walking/stationary)    │
+│  • Egomotion compensation: distinguishes true object motion │
+│    from camera movement (e.g. user walking forward)         │
 │  • FeatureDB extracts crop embeddings & hot-swaps custom    │
 │    labels (e.g. "person" -> "Ramesh") via Cosine Sim        │
 │  • Kalman filter smooths depth per track, rejects spikes    │
 │  • Speed = ΔDistance / ΔTime  (metres per second)           │
+│  • Motion classification: approaching/receding/lateral      │
+│    (compensated for user movement)                          │
 │  • TTC  = Distance / Speed    (EMA smoothed)                │
 │  • threat_score = distance × weight + speed + TTC bonus     │
 └──────────────────────────┬──────────────────────────────────┘
@@ -398,7 +407,9 @@ Every session saved to `logs/session_YYYYMMDD_HHMMSS.jsonl`:
 - [x] Depth Anything V2 monocular depth estimation
 - [x] Auto scale calibration from reference objects
 - [x] ByteTrack object tracking with Kalman filter
-- [x] Speed + motion classification
+- [x] Optical flow egomotion detection
+- [x] Motion compensation (user movement vs object movement)
+- [x] Speed + motion classification (approaching/receding/lateral)
 - [x] Time-To-Collision calculation
 - [x] Max-heap priority queue (TTC → distance → type)
 - [x] Dynamic threat scoring + penalty heatmap
@@ -406,18 +417,21 @@ Every session saved to `logs/session_YYYYMMDD_HHMMSS.jsonl`:
 - [x] Zero-latency PTT voice input
 - [x] LangChain agent with 9 tools (Groq LLaMA 3.3 70B)
 - [x] 15-minute visual memory + custom object labeling
+- [x] MobileNetV3 vector embeddings for custom object recognition
+- [x] Real-time label swapping (zero fine-tuning, no catastrophic forgetting)
 - [x] Persistent goal system (proactive scanning)
-- [x] Google Maps GPS navigation
-- [x] Session logging (JSONL)
+- [x] Google Maps GPS navigation (shortest path selection)
+- [x] Session logging (JSONL telemetry)
+- [x] Remember Mode (R key) - capture and learn custom objects/people
+- [x] Contextual curiosity (proactive assistance suggestions)
+- [x] Busy road detection (vehicle density warnings)
+- [x] Emergency verbal bypass (critical alerts override mic input)
 - [ ] GPU acceleration (CUDA)
-- [ ] Wearable camera support (glasses mount)
-- [ ] Mobile app wrapper (Android/iOS)
-- [ ] Offline LLM fallback (Ollama)
 
 ## Author
 
-**Author:** Paavan Siri VArdhan Narava
-**Email:** paavansirivardhannarava@gmail.com
+**Author:** Paavan Siri Vardhan Narava
+**Email:** naravapaavansirivardhan@gmail.com
  
 ---
 

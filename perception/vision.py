@@ -17,6 +17,7 @@ from core.config import Config
 from core.detection import Detection
 from perception.mono_depth import MonoDepth
 from perception.tracker import ObjectTracker
+from perception.egomotion import OpticalFlowEgomotion
 from kinematics.speed import SpeedEstimator
 from kinematics.ttc import TTCCalculator
 
@@ -38,8 +39,11 @@ class VisionSystem:
         self.model   = YOLO(Config.MODEL_PATH)
         self.depth   = MonoDepth()
         self.tracker = ObjectTracker()
+        self.egomotion = OpticalFlowEgomotion()
         self.speed_e = SpeedEstimator()
         self.ttc_e   = TTCCalculator()
+        self.user_state = "Stationary"
+        self.user_speed = 0.0
 
         # Async depth state
         self._depth_lock    = threading.Lock()
@@ -140,13 +144,18 @@ class VisionSystem:
         # 5. Track
         detections = self.tracker.update(detections, yolo_frame)
 
+        # 5.5 Egomotion
+        gray_frame = cv2.cvtColor(yolo_frame, cv2.COLOR_BGR2GRAY)
+        ego_boxes = [(int(d.box[0]/disp_sx), int(d.box[1]/disp_sy), int(d.box[2]/disp_sx), int(d.box[3]/disp_sy)) for d in detections]
+        self.user_speed, self.user_state = self.egomotion.update(gray_frame, ego_boxes, [d.label for d in detections])
+
         # 6. Speed + TTC
         tracks = self.tracker.active_tracks
         for det in detections:
             if det.track_id is None or det.track_id not in tracks:
                 continue
             trk = tracks[det.track_id]
-            spd, mot = self.speed_e.update(trk)
+            spd, mot = self.speed_e.update(trk, self.user_speed, self.user_state)
             det.speed_mps = spd
             det.motion    = mot
             ttc = self.ttc_e.compute(det.distance_m, spd, mot, trk.prev_ttc)
