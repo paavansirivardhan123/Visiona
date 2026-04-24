@@ -95,6 +95,13 @@ class AgentEngine:
         Takes the user's voice command, current scene context, and historical memory,
         and provides a natural language response.
         """
+        from datetime import datetime
+        log_file = "conversation_log.txt"
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(f"\n--- {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---\n")
+            f.write(f"USER INPUT: {question}\n")
+            f.write(f"SCENE CONTEXT: {raw_scene_context}\n")
+
         if not self.llm_with_tools:
             if self.tts:
                 self.tts("My reasoning systems are currently offline. Please add an API key.")
@@ -154,6 +161,9 @@ class AgentEngine:
                         else:
                             tool_output = selected_tool.invoke(tool_args)
                         messages.append(ToolMessage(tool_call_id=tool_call["id"], content=str(tool_output)))
+                        with open(log_file, "a", encoding="utf-8") as f:
+                            f.write(f"TOOL CALL: {tool_call['name']} - Args: {tool_args}\n")
+                            f.write(f"TOOL OUTPUT: {tool_output}\n")
                 
                 # 3. Final Answer Synthesis
                 # Use the base LLM for synthesis to ensure we get a text response
@@ -164,12 +174,18 @@ class AgentEngine:
 
             if text:
                 print(f"  [Agent] Responded: {text}")
+                with open(log_file, "a", encoding="utf-8") as f:
+                    f.write(f"RESPONSE: {text}\n")
                 if self.tts:
                     self.tts(text)
             else:
                 print("  [Agent] Warning: LLM returned an empty response.")
+                with open(log_file, "a", encoding="utf-8") as f:
+                    f.write("RESPONSE: [Empty Response]\n")
 
         except Exception as e:
+            with open(log_file, "a", encoding="utf-8") as f:
+                f.write(f"ERROR: {e}\n")
             print(f"  [Agent] Inference Error: {e}")
             if self.tts:
                 self.tts("I am currently experiencing an error in my reasoning brain.")

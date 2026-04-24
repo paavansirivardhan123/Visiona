@@ -8,7 +8,7 @@ class Config:
         "BACK":  None,
     }
 
-    MODEL_PATH     = "yolov8n.pt"
+    MODEL_PATH     = "yolo11n.pt"
     IMG_SIZE       = 640
     CONF_THRESHOLD = 0.35
     FRAME_SKIP     = 2

@@ -27,6 +27,14 @@ def group_detections(detections: List[Detection]) -> Dict[str, List[Detection]]:
         by_dir.setdefault(d.direction, []).append(d)
     return by_dir
 
+STATIC_LABELS = {
+    "chair", "bench", "potted plant", "tree", "helmet", 
+    "bed", "dining table", "toilet", "tv", "microwave", 
+    "oven", "toaster", "sink", "refrigerator", "book", 
+    "clock", "vase", "fire hydrant", "stop sign", 
+    "parking meter", "traffic light"
+}
+
 
 _direction_penalties = {"FRONT": 0.0, "LEFT": 0.0, "RIGHT": 0.0, "BACK": 0.0}
 _last_eval_time = 0.0
@@ -135,14 +143,16 @@ def _count_phrase(label: str, count: int, direction: str, sample: Detection) -> 
         base += f" at {steps} {step_word}"
 
     # Append motion info
-    if sample.motion == "approaching" and sample.speed_mps:
-        speed_word = _get_speed_descriptor(sample.speed_mps)
-        base += f", approaching {speed_word}"
-    elif sample.motion == "moving_away" and sample.speed_mps:
-        speed_word = _get_speed_descriptor(sample.speed_mps)
-        base += f", moving away {speed_word}"
-    elif sample.motion == "moving_away":
-        base += ", moving away"
+    is_static = label.lower() in STATIC_LABELS
+    if not is_static:
+        if sample.motion == "approaching" and sample.speed_mps:
+            speed_word = _get_speed_descriptor(sample.speed_mps)
+            base += f", approaching {speed_word}"
+        elif sample.motion == "moving_away" and sample.speed_mps:
+            speed_word = _get_speed_descriptor(sample.speed_mps)
+            base += f", moving away {speed_word}"
+        elif sample.motion == "moving_away":
+            base += ", moving away"
 
     # Warning prefix for low TTC
     if sample.ttc_sec is not None and sample.ttc_sec <= Config.TTC_WARN_THRESHOLD:
@@ -161,7 +171,8 @@ def _build_msg(d: Detection, force_close: bool) -> str:
         step_word = "step" if steps == 1 else "steps"
         dist_s = f"{steps} {step_word}"
 
-    if d.motion == "approaching" and d.speed_mps:
+    is_static = label.lower() in STATIC_LABELS
+    if not is_static and d.motion == "approaching" and d.speed_mps:
         speed_word = _get_speed_descriptor(d.speed_mps)
         msg = f"{label.capitalize()} approaching {dir_str} {speed_word}"
     elif force_close or (d.distance_m and d.distance_m <= Config.HIGH_PRIORITY_M):

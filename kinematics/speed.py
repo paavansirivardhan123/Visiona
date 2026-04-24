@@ -16,7 +16,19 @@ class SpeedEstimator:
     def __init__(self):
         self._speed_history: Dict[int, deque] = {}
 
-    STATIC_CLASSES = {"bench", "chair", "potted plant", "door", "table", "sofa", "bed", "dining table", "tv", "stop sign", "traffic light", "fire hydrant", "sink", "refrigerator", "oven", "microwave", "toilet"}
+    STATIC_CLASSES = {
+        "bench", "chair", "potted plant", "door", "table", "sofa", "bed", 
+        "dining table", "tv", "stop sign", "traffic light", "fire hydrant", 
+        "sink", "refrigerator", "oven", "microwave", "toilet", "vase", 
+        "clock", "book", "bottle", "wine glass", "cup", "fork", "knife", 
+        "spoon", "bowl", "banana", "apple", "sandwich", "orange", "broccoli", 
+        "carrot", "hot dog", "pizza", "donut", "cake", "laptop", "mouse", 
+        "remote", "keyboard", "cell phone", "scissors", "teddy bear", 
+        "hair drier", "toothbrush", "backpack", "umbrella", "handbag", 
+        "tie", "suitcase", "frisbee", "skis", "snowboard", "sports ball", 
+        "kite", "baseball bat", "baseball glove", "skateboard", "surfboard", 
+        "tennis racket", "parking meter", "couch"
+    }
 
     def update(self, track, egomotion_speed_mps: float = 0.0, egomotion_state: str = "Stationary") -> Tuple[float, str]:
         """

@@ -38,3 +38,5 @@ logs/
 
 # Sample videos - tracked with Git LFS
 # sample-vid/
+
+conversation_log.txt

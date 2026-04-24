@@ -19,6 +19,7 @@ _MAX_AGE = 5.0   # seconds — drop messages older than this
 class SpeechEngine:
 
     def __init__(self):
+        self._eq = queue.Queue()
         self._pq = queue.Queue()
         self._nq = queue.Queue(maxsize=1)
         self.last_spoken_time = 0.0
@@ -49,17 +50,15 @@ class SpeechEngine:
         # Note: We don't set _interrupt_requested here permanently, 
         # it's managed by duck/unduck.
         self._flush_all()
-        if self.engine and self.engine.isBusy():
-            try:
-                self.engine.stop()
-            except Exception:
-                pass
+        # Removed self.engine.stop() core bug: calling stop() on Windows SAPI5 permanently 
+        # breaks the event loop, causing subsequent TTS requests to silently fail. 
+        # The ducking logic (volume = 0.0) is sufficient to mute the output without breaking the engine.
 
     def duck(self):
         """Immediately silence all speech when mic is active."""
         self._interrupt_requested = True
         self._volume = 0.0 # Complete silence
-        self.interrupt() 
+        # REMOVED self.interrupt() so it doesn't flush queues, allowing them to seamlessly pause!
         if self.engine:
             try:
                 self.engine.setProperty('volume', self._volume)
@@ -80,27 +79,37 @@ class SpeechEngine:
         while self._running:
             item = None
             try:
-                # Priority queue first
-                item = self._pq.get_nowait()
+                # Emergency queue always processed first, regardless of ducking
+                item = self._eq.get_nowait()
             except queue.Empty:
-                try:
-                    # Normal queue with timeout
-                    item = self._nq.get(timeout=0.1)
-                except queue.Empty:
-                    continue
+                if not self._interrupt_requested:
+                    try:
+                        # Priority queue
+                        item = self._pq.get_nowait()
+                    except queue.Empty:
+                        try:
+                            # Normal queue with timeout
+                            item = self._nq.get(timeout=0.1)
+                        except queue.Empty:
+                            pass
+                else:
+                    time.sleep(0.1)
             
             if item is None:
-                break
+                continue
                 
             text, ts, is_emergency = item
 
-            # If we're currently ducked/interrupted, we skip messages 
-            # UNLESS it's an emergency message.
-            if self._interrupt_requested and not is_emergency:
+            # If user hold V for a long time, we don't want to drop the message unless it's very stale
+            if time.time() - ts > 15.0:
                 continue
 
-            if time.time() - ts > _MAX_AGE:
-                continue
+            from datetime import datetime
+            try:
+                with open("conversation_log.txt", "a", encoding="utf-8") as f:
+                    f.write(f"SYSTEM SPEECH ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')}): {text}\n")
+            except Exception:
+                pass
 
             if self.engine:
                 try:
@@ -119,7 +128,10 @@ class SpeechEngine:
                 print(f"  [Speech] {text}")
 
     def _flush_all(self):
-        """Clear both priority and normal queues."""
+        """Clear all queues."""
+        while not self._eq.empty():
+            try: self._eq.get_nowait()
+            except queue.Empty: break
         while not self._pq.empty():
             try: self._pq.get_nowait()
             except queue.Empty: break
@@ -147,10 +159,13 @@ class SpeechEngine:
         
         cooldown_ok = bypass_cooldown or emergency or (now - last_time) > required_cooldown
 
-        if priority or emergency:
-            if bypass_cooldown or emergency:
-                # Add 'emergency' flag to the item so the worker knows to bypass ducking
-                self._pq.put((text, now, emergency)) 
+        if emergency:
+            self._eq.put((text, now, True))
+            self._semantic_history[semantic_base] = now
+            self.last_spoken_time = now
+        elif priority:
+            if bypass_cooldown:
+                self._pq.put((text, now, False)) 
             else:
                 self._flush_normal()
                 self._pq.put((text, now, False))

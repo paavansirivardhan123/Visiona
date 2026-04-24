@@ -356,21 +356,71 @@ class VisionaApp:
             self.speech.speak("Busy road detected. Use caution while navigating.", priority=True)
             self._state = "CAUTION"
 
+        # Filter for ambient alerts based on user behavior:
+        # Non-front detections are silent EXCEPT large approaching vehicles
+        def _is_ambient_reportable(det: Detection) -> bool:
+            if det.direction == "FRONT":
+                return True
+            base_l = getattr(det, 'base_label', det.label).lower()
+            return base_l in ("car", "truck", "bus", "motorcycle", "bicycle") and getattr(det, 'motion', None) == "approaching"
+            
+        def _is_threat(det: Detection) -> bool:
+            base_l = getattr(det, 'base_label', det.label).lower()
+            if (det.ttc_sec is not None and det.ttc_sec <= Config.TTC_WARN_THRESHOLD): return True
+            if (det.threat_score > Config.THREAT_HIGH_THRESHOLD): return True
+            if base_l in ("car", "truck", "bus", "motorcycle", "bicycle") and getattr(det, 'motion', None) == "approaching": return True
+            return False
+
+        if not hasattr(self, '_ambient_states'):
+            self._ambient_states = {}
+            
+        import time
+        now = time.time()
+        
+        raw_ambient_dets = [d for d in sorted_dets if _is_ambient_reportable(d)]
+        ambient_dets = []
+        allowed_labels_this_frame = set()
+        
+        for d in raw_ambient_dets:
+            if _is_threat(d):
+                ambient_dets.append(d)
+                continue
+                
+            label_lower = d.label.lower()
+            dir_str = d.direction
+            
+            if label_lower not in self._ambient_states:
+                self._ambient_states[label_lower] = {}
+                
+            key = f"{label_lower}_{dir_str}"
+            if key in allowed_labels_this_frame:
+                # Already allowed one of these in this exact frame, let the others through to preserve group counting
+                ambient_dets.append(d)
+                continue
+                
+            if now - self._ambient_states[label_lower].get(dir_str, 0.0) >= 3.0:
+                ambient_dets.append(d)
+                self._ambient_states[label_lower][dir_str] = now
+                allowed_labels_this_frame.add(key)
+                
+        ambient_hp = [d for d in ambient_dets if d.is_high_priority]
+
         # 2.5 Extreme Threat Detection (Emergency Verbal Bypass)
         # If a large/fast object is very close, speak it IMMEDIATELY even if user is talking
-        for d in hp:
-            base_l = getattr(d, 'base_label', d.label)
-            if base_l in ("truck", "bus", "car") and d.distance_m and d.distance_m < 2.5:
-                self.speech.speak(f"Emergency: {d.label} ahead!", emergency=True)
+        for d in ambient_hp:
+            base_l = getattr(d, 'base_label', d.label).lower()
+            dir_s = {"FRONT": "ahead", "LEFT": "on the left", "RIGHT": "on the right", "BACK": "behind you"}.get(d.direction, "nearby")
+            if base_l in ("truck", "bus", "car", "motorcycle", "bicycle") and d.distance_m and d.distance_m < 2.5:
+                self.speech.speak(f"Emergency: {d.label} {dir_s}!", emergency=True)
             elif base_l == "person" and d.distance_m and d.distance_m < 1.0:
-                self.speech.speak(f"{d.label} very close!", emergency=True)
+                self.speech.speak(f"{d.label} very close {dir_s}!", emergency=True)
 
         # 3. Beep (High Priority Alerts)
-        self.alert.process(hp)
+        self.alert.process(ambient_hp)
 
         # 4. Speech Summaries
-        grouped  = group_detections(sorted_dets)
-        messages = build_speech_messages(grouped, hp)
+        grouped  = group_detections(ambient_dets)
+        messages = build_speech_messages(grouped, ambient_hp)
         
         # 5. Vision-Augmented Memory Push
         full_context = self._get_full_spatial_context()
@@ -386,10 +436,11 @@ class VisionaApp:
             # 6.3 Contextual Curiosity
             import time
             if time.time() - self._curiosity_cooldown > 30.0:
-                for d in hp:
+                for d in ambient_hp:
                     if d.label in ("chair", "car", "stop sign", "bench"):
                         import threading
-                        anchor_ctx = f"Important object nearby: {d.label} at {d.distance_m}m."
+                        steps = max(1, round(d.distance_m / Config.METERS_PER_STEP)) if d.distance_m else 2
+                        anchor_ctx = f"Important object nearby: {d.label} at {steps} steps."
                         threading.Thread(
                             target=self.agent_engine.process_voice_command, 
                             args=(f"You proactively noticed a {d.label}. Politely ask the user in one sentence if they need help interacting with or avoiding it.", anchor_ctx),
@@ -398,7 +449,74 @@ class VisionaApp:
                         self._curiosity_cooldown = time.time()
                         break
                         
-            self.speech.speak_all(messages, first_priority=bool(hp))
+            self.speech.speak_all(messages, first_priority=bool(ambient_hp))
+
+    def _evaluate_target(self, det: Detection, label: str) -> str:
+        """Returns action: 'IGNORE' or 'NEW_CLOSER_DOUBLE'."""
+        if not hasattr(self, '_target_states'):
+            self._target_states = {}
+            
+        label = label.lower()
+        import time
+        now = time.time()
+        
+        d_val = det.distance_m if det.distance_m is not None else 999.0
+        steps = max(1, round(d_val / Config.METERS_PER_STEP)) if d_val != 999.0 else 999
+        direction = det.direction
+        
+        if label not in self._target_states:
+            self._target_states[label] = {
+                "global_min_steps": 999,
+                "directions": {}
+            }
+            
+        state = self._target_states[label]
+        
+        if direction not in state["directions"]:
+            state["directions"][direction] = {
+                "last_time": 0.0
+            }
+            
+        dir_state = state["directions"][direction]
+        
+        # 1. 5-second gap for the same panel
+        time_since_last = now - dir_state["last_time"]
+        if time_since_last < 5.0:
+            return "IGNORE"
+            
+        # 2. Shorter distance check (using physical steps to prevent noise spam)
+        if steps < state.get("global_min_steps", 999):
+            state["global_min_steps"] = steps
+            dir_state["last_time"] = now
+            return "NEW_CLOSER_DOUBLE"
+            
+        # 3. Same or greater distance -> DO NOT RECOMMEND
+        return "IGNORE"
+
+    def _trigger_contextual_arrival(self, label: str, dir_s: str):
+        if self.agent_engine and self.agent_engine.llm:
+            import threading
+            from langchain_core.messages import HumanMessage
+            
+            def _ask_llm():
+                prompt = (
+                    f"The user is blind and has just arrived right next to a '{label}' ({dir_s}). "
+                    "Write exactly ONE comforting, concise sentence telling them where it is, "
+                    "suggesting what they can logically do with it, and asking if they want to set a new goal. "
+                    "Do not use markdown."
+                )
+                try:
+                    resp = self.agent_engine.llm.invoke([HumanMessage(content=prompt)])
+                    if self.speech:
+                        self.speech.speak(resp.content, priority=True, bypass_cooldown=True, emergency=True)
+                except Exception as e:
+                    print(f"  [Agent] Contextual fallback needed: {e}")
+                    if self.speech:
+                        self.speech.speak(f"You are next to the {label}. Do you want to set a new goal?", priority=True, bypass_cooldown=True, emergency=True)
+            
+            threading.Thread(target=_ask_llm, daemon=True).start()
+        else:
+            self.speech.speak(f"You have arrived at the {label}. Do you want to set a new goal?", priority=True, bypass_cooldown=True, emergency=True)
 
     def _match_goals(self, detections: List[Detection]):
         """Proactively checks if any detected objects match a persistent user goal."""
@@ -407,33 +525,39 @@ class VisionaApp:
         if not candidates:
             return
 
-        # Track which goals we've announced recently to avoid spam
-        if not hasattr(self, '_announced_goals'):
-            self._announced_goals = {}
-        
-        import time
-        now = time.time()
+        # Enforce shortest distance precedence to prioritize side objects closer than front ones
+        sorted_dets = sorted(detections, key=lambda x: x.distance_m if x.distance_m is not None else 999.0)
 
-        for d in detections:
+        for d in sorted_dets:
             label_lower = d.label.lower()
             if label_lower in [c.lower() for c in candidates]:
-                # Check if we've announced this specific object recently
-                announce_key = f"{label_lower}_{d.direction}"
-                last_announce = self._announced_goals.get(announce_key, 0)
+                is_very_near = d.distance_m is not None and d.distance_m < 0.5
+                dir_s = {"FRONT": "directly in front of you", "LEFT": "right beside you on the left", "RIGHT": "right beside you on the right", "BACK": "right behind you"}.get(d.direction, "nearby")
                 
-                # Only announce every 10 seconds for the same object type in same direction
-                if now - last_announce < 10.0:
-                    continue
-                
-                # We found a goal-related object!
-                dist = f"{d.distance_ft} feet" if d.distance_ft else "nearby"
-                dir_s = {"FRONT": "in front", "LEFT": "on the left", "RIGHT": "on the right", "BACK": "behind you"}.get(d.direction, "")
-                msg = f"Found a {label_lower}, {dist} {dir_s}."
-                
-                # Speak it immediately with high priority
-                self.speech.speak(msg, priority=True, bypass_cooldown=True)
-                self._announced_goals[announce_key] = now
-                break
+                if is_very_near:
+                    # Successfully reached the persistent goal. Complete it and announce contextually.
+                    goal_system.complete_goal(label_lower)
+                    self._trigger_contextual_arrival(label_lower, dir_s)
+                    break
+                    
+                eval_cmd = self._evaluate_target(d, label_lower)
+                if eval_cmd == "NEW_CLOSER_DOUBLE":
+                    # We found a goal-related object!
+                    if d.distance_m:
+                        steps = max(1, round(d.distance_m / Config.METERS_PER_STEP))
+                        dist = f"{steps} step{'s' if steps > 1 else ''}"
+                    else:
+                        dist = "nearby"
+                    speak_dir = {"FRONT": "in front", "LEFT": "on the left", "RIGHT": "on the right", "BACK": "behind you"}.get(d.direction, "")
+                    msg = f"Found a {label_lower}, {dist} {speak_dir}."
+                    
+                    # Speak it immediately with high priority
+                    self.speech.speak(msg, priority=True, bypass_cooldown=True)
+                    
+                    # Trigger second announcement after 2 seconds
+                    import threading
+                    threading.Timer(2.0, self.speech.speak, args=(msg,), kwargs={"priority": True, "bypass_cooldown": True}).start()
+                    break
 
         # Target seeking (for explicit search commands)
         if self._search_intent or (hasattr(self, '_search_intents') and self._search_intents):
@@ -452,19 +576,41 @@ class VisionaApp:
                 continue
             matches = [d for d in detections if intent.lower() in d.label.lower()]
             if matches:
+                # Explicitly sort matches by minimum distance to ALWAYS select the closest object
+                matches.sort(key=lambda x: x.distance_m if x.distance_m is not None else 999.0)
                 t = matches[0]
-                dist = f"{t.distance_ft} feet" if t.distance_ft else "nearby"
-                dir_s = {"FRONT": "in front", "LEFT": "on the left",
-                         "RIGHT": "on the right", "BACK": "behind you"}.get(t.direction, "")
-                self.speech.speak(f"Found {t.label}. {dist} {dir_s}.", priority=True, bypass_cooldown=True)
                 
-                # Remove this intent from the list
-                if intent in self._search_intents:
-                    self._search_intents.remove(intent)
-                if intent == self._search_intent:
-                    self._search_intent = None
+                is_very_near = t.distance_m is not None and t.distance_m < 0.5
+                dir_s = {"FRONT": "directly in front of you", "LEFT": "right beside you on the left",
+                         "RIGHT": "right beside you on the right", "BACK": "right behind you"}.get(t.direction, "nearby")
+                
+                if is_very_near:
+                    # Remove this intent from the list since we have successfully found it up close
+                    if intent in self._search_intents:
+                        self._search_intents.remove(intent)
+                    if intent == self._search_intent:
+                        self._search_intent = None
+                    self._state = "GUIDING"
                     
-                self._state = "GUIDING"
+                    self._trigger_contextual_arrival(t.label, dir_s)
+                    return  # Stop searching after completion
+                    
+                eval_cmd = self._evaluate_target(t, intent)
+                if eval_cmd == "NEW_CLOSER_DOUBLE":
+                    if t.distance_m:
+                        steps = max(1, round(t.distance_m / Config.METERS_PER_STEP))
+                        dist = f"{steps} step{'s' if steps > 1 else ''}"
+                    else:
+                        dist = "nearby"
+                    speak_dir = {"FRONT": "in front", "LEFT": "on the left",
+                             "RIGHT": "on the right", "BACK": "behind you"}.get(t.direction, "")
+                    msg = f"Found {t.label}. {dist} {speak_dir}."
+                    self.speech.speak(msg, priority=True, bypass_cooldown=True)
+                    
+                    # Trigger second announcement after 2 seconds
+                    import threading
+                    threading.Timer(2.0, self.speech.speak, args=(msg,), kwargs={"priority": True, "bypass_cooldown": True}).start()
+                    
                 return  # Announce one at a time
 
     # ------------------------------------------------------------------
@@ -540,10 +686,16 @@ class VisionaApp:
         
         # First check if the object is already visible in current detections
         if self._all_dets:
-            for d in self._all_dets:
+            # Sort by distance so the absolute closest matching object is announced first
+            sorted_dets = sorted(self._all_dets, key=lambda x: x.distance_m if x.distance_m is not None else 999.0)
+            for d in sorted_dets:
                 if intent.lower() in d.label.lower():
                     # Found it immediately!
-                    dist = f"{d.distance_ft} feet" if d.distance_ft else "nearby"
+                    if d.distance_m:
+                        steps = max(1, round(d.distance_m / Config.METERS_PER_STEP))
+                        dist = f"{steps} step{'s' if steps > 1 else ''}"
+                    else:
+                        dist = "nearby"
                     dir_s = {"FRONT": "in front", "LEFT": "on the left",
                              "RIGHT": "on the right", "BACK": "behind you"}.get(d.direction, "")
                     self.speech.speak(f"There's a {d.label} {dist} {dir_s}.", priority=True, bypass_cooldown=True)
@@ -567,8 +719,15 @@ class VisionaApp:
             return f"{motion_ctx} No objects currently detected in view."
         
         ctx_parts = []
-        for d in self._all_dets:
-            dist = f"{d.distance_m:.1f}m" if d.distance_m else "unknown distance"
+        # Sort by distance so the closest objects are always processed first
+        sorted_dets = sorted(self._all_dets, key=lambda x: x.distance_m if x.distance_m is not None else 999.0)
+        
+        for d in sorted_dets:
+            if d.distance_m:
+                steps = max(1, round(d.distance_m / Config.METERS_PER_STEP))
+                dist = f"{steps} steps"
+            else:
+                dist = "unknown distance"
             dir_s = {"FRONT": "in front", "LEFT": "on the left", 
                      "RIGHT": "on the right", "BACK": "behind you"}.get(d.direction, d.direction.lower())
             
