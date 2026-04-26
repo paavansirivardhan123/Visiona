@@ -549,13 +549,27 @@ class VisionaApp:
                 
         ambient_hp = [d for d in ambient_dets if d.is_high_priority]
 
-        # 2.5 Extreme Threat Detection (Emergency Verbal Bypass)
+        # 2.5 Crowd Detection (Busy Area Alert)
+        if not hasattr(self, '_crowd_alert_time'):
+            self._crowd_alert_time = 0.0
+            
+        import time
+        now = time.time()
+            
+        person_count = sum(1 for d in sorted_dets if getattr(d, 'base_label', d.label).lower() == "person" and d.direction == "FRONT")
+        if person_count > 5 and (now - self._crowd_alert_time) >= 60.0:
+            self.speech.speak("You are standing in a crowded area where so many people are walking towards you. So please be careful.", priority=True, emergency=True)
+            self._crowd_alert_time = now
+
+        # If we are in the 60-second crowd cooldown, mute ALL person-related announcements
+        if (now - self._crowd_alert_time) < 60.0:
+            ambient_dets = [d for d in ambient_dets if getattr(d, 'base_label', d.label).lower() != "person"]
+            ambient_hp = [d for d in ambient_hp if getattr(d, 'base_label', d.label).lower() != "person"]
+
+        # 2.6 Extreme Threat Detection (Emergency Verbal Bypass)
         # If a large/fast object is very close, speak it IMMEDIATELY even if user is talking
         if not hasattr(self, '_emergency_alert_times'):
             self._emergency_alert_times = {}
-        
-        import time
-        now = time.time()
         
         for d in ambient_hp:
             base_l = getattr(d, 'base_label', d.label).lower()
