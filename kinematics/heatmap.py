@@ -142,17 +142,20 @@ def _count_phrase(label: str, count: int, direction: str, sample: Detection) -> 
         step_word = "step" if steps == 1 else "steps"
         base += f" at {steps} {step_word}"
 
-    # Append motion info
+    # Append motion info - ONLY for approaching objects or vehicles
     is_static = label.lower() in STATIC_LABELS
+    base_l = label.lower()
+    is_vehicle = base_l in ("car", "truck", "bus", "motorcycle", "bicycle")
+    
     if not is_static:
+        # Only mention motion for approaching objects or any vehicle motion
         if sample.motion == "approaching" and sample.speed_mps:
             speed_word = _get_speed_descriptor(sample.speed_mps)
             base += f", approaching {speed_word}"
-        elif sample.motion == "moving_away" and sample.speed_mps:
+        elif is_vehicle and sample.motion == "moving_away" and sample.speed_mps:
+            # Only mention moving away for vehicles (safety relevant)
             speed_word = _get_speed_descriptor(sample.speed_mps)
             base += f", moving away {speed_word}"
-        elif sample.motion == "moving_away":
-            base += ", moving away"
 
     # Warning prefix for low TTC
     if sample.ttc_sec is not None and sample.ttc_sec <= Config.TTC_WARN_THRESHOLD:

@@ -2,16 +2,16 @@ class Config:
     """Centralized configuration."""
 
     SOURCES = {
-        "FRONT": "sample-vid/3Dir/vid1/FRONT.mp4",
-        "LEFT":  "sample-vid/3Dir/vid1/LEFT.mp4",
-        "RIGHT": "sample-vid/3Dir/vid1/RIGHT.mp4",
+        "FRONT": "sample-vid/FRONT/VID2.mp4",
+        "LEFT":  None,
+        "RIGHT": None,
         "BACK":  None,
     }
 
     MODEL_PATH     = "yolo11n.pt"
     IMG_SIZE       = 640
     CONF_THRESHOLD = 0.35
-    FRAME_SKIP     = 2
+    FRAME_SKIP     = 3  # Process every 3rd frame for better sync (was 2)
 
     METERS_PER_STEP = 0.75
     MAX_DISTANCE_M  = 10.0 * METERS_PER_STEP
@@ -58,6 +58,11 @@ class Config:
     SPEECH_COOLDOWN   = 2.5
     SEMANTIC_COOLDOWN = 5.0
     MAX_MESSAGES      = 3
+    
+    # New cooldown configurations
+    FRONT_CAMERA_COOLDOWN = 3.0      # seconds for FRONT camera non-threat objects
+    GOAL_SAME_PANEL_COOLDOWN = 5.0   # seconds for goal objects in same direction with decreasing distance (was 2.0)
+    GOAL_CONSTANT_COOLDOWN = 7.0     # seconds for goal objects with constant distance (was 5.0)
 
     WINDOW_NAME = "Visiona AI"
     DISPLAY_W   = 640

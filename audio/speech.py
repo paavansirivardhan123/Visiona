@@ -98,11 +98,24 @@ class SpeechEngine:
             if item is None:
                 continue
                 
-            text, ts, is_emergency = item
+            text, ts, is_emergency, scheduled_time = item
 
             # If user hold V for a long time, we don't want to drop the message unless it's very stale
             if time.time() - ts > 15.0:
                 continue
+
+            # Delay logic for scheduled messages (emergency messages bypass this)
+            if not is_emergency and scheduled_time is not None:
+                current_time = time.time()
+                
+                # Drop stale scheduled messages (scheduled_time > 15 seconds in the past)
+                if current_time - scheduled_time > 15.0:
+                    continue
+                
+                # If scheduled_time is in the future, sleep until then
+                if scheduled_time > current_time:
+                    delay = scheduled_time - current_time
+                    time.sleep(delay)
 
             from datetime import datetime
             try:
@@ -139,7 +152,7 @@ class SpeechEngine:
             try: self._nq.get_nowait()
             except queue.Empty: break
 
-    def speak(self, text: str, priority: bool = False, bypass_cooldown: bool = False, emergency: bool = False):
+    def speak(self, text: str, priority: bool = False, bypass_cooldown: bool = False, emergency: bool = False, scheduled_time: float = None):
         if not text:
             return
         now = time.time()
@@ -160,21 +173,25 @@ class SpeechEngine:
         cooldown_ok = bypass_cooldown or emergency or (now - last_time) > required_cooldown
 
         if emergency:
-            self._eq.put((text, now, True))
+            # Emergency messages always use scheduled_time=None (immediate playback)
+            self._eq.put((text, now, True, None))
             self._semantic_history[semantic_base] = now
             self.last_spoken_time = now
         elif priority:
             if bypass_cooldown:
-                self._pq.put((text, now, False)) 
+                # Priority queue: use provided scheduled_time
+                self._pq.put((text, now, False, scheduled_time)) 
             else:
                 self._flush_normal()
-                self._pq.put((text, now, False))
+                # Priority queue: use provided scheduled_time
+                self._pq.put((text, now, False, scheduled_time))
             self._semantic_history[semantic_base] = now
             self.last_spoken_time = now
         elif cooldown_ok:
             self._flush_normal()
             try:
-                self._nq.put_nowait((text, now, False))
+                # Normal queue: use provided scheduled_time
+                self._nq.put_nowait((text, now, False, scheduled_time))
                 self._semantic_history[semantic_base] = now
             except queue.Full:
                 pass
