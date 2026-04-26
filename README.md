@@ -49,7 +49,9 @@ No stereo cameras. No LiDAR. No custom sensors. Just a standard RGB camera and a
 **🔊 Intelligent Audio Guidance**
 - 🗣️ Speaks compact, natural descriptions: "2 persons ahead", "Group of cars left"
 - 📌 Priority queue (max-heap) ensures the most dangerous object is announced first
-- ⚠️ Dynamic threat scoring: distance × object weight × approach speed × TTC
+- ⚠️ Dynamic threat scoring: distance × object weight × approach speed × TTC (static objects filtered from false alarms)
+- ⏱️ Smart Cooldowns: Strict 7-second ambient cooldowns and 5-second goal repeat intervals
+- 🎯 Step-Based Tracking: Tracks record distances in distinct "steps" to eliminate noise from sensor fluctuation
 - 🌡️ Penalty heatmap prevents one direction from monopolizing audio
 - 🔔 Proximity beep alerts with frequency scaling by distance
 
@@ -64,6 +66,7 @@ No stereo cameras. No LiDAR. No custom sensors. Just a standard RGB camera and a
 - Routes voice commands to the correct tool automatically
 - Answers questions about the current scene and recent activity
 - Sets persistent goals ("I need water") and proactively alerts when relevant objects appear
+- Contextual Arrival: Generates comforting, environment-aware guidance when you reach your destination (<= 1 step)
 - Confirmation system asks before executing ambiguous requests
 - Graceful offline fallback when the API key is missing
 
@@ -122,8 +125,6 @@ VISIONA/
 │   ├── mono_depth.py               Depth Anything V2 inference + calibration
 │   ├── tracker.py                  ByteTrack IoU tracker with Kalman per track
 │   └── egomotion.py                Optical flow user motion detection
-│   ├── mono_depth.py               Depth Anything V2 inference + calibration
-│   └── tracker.py                  ByteTrack IoU tracker with Kalman per track
 ├── kinematics/
 │   ├── heatmap.py                  Object grouping + speech message builder
 │   ├── speed.py                    Speed estimation + motion classification
@@ -198,7 +199,9 @@ VISIONA/
 │  • Max-heap sorts by: TTC → distance → object type          │
 │  • Penalty heatmap prevents one direction dominating audio  │
 │  • Groups objects: "Group of persons ahead" / "2 cars left" │
+│  • Enforces 7-second ambient and 5-second goal cooldowns    │
 │  • Emergency TTC bypass always speaks critical warnings     │
+│    (Filters out static objects to prevent false alarms)     │
 └──────────────────────────┬──────────────────────────────────┘
                            │
                            ▼
@@ -426,6 +429,8 @@ Every session saved to `logs/session_YYYYMMDD_HHMMSS.jsonl`:
 - [x] Contextual curiosity (proactive assistance suggestions)
 - [x] Busy road detection (vehicle density warnings)
 - [x] Emergency verbal bypass (critical alerts override mic input)
+- [x] Contextual goal arrival notifications & LLM guidance
+- [x] Step-based spatial tracking for noise elimination
 - [ ] GPU acceleration (CUDA)
 
 ## Author
