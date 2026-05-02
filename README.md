@@ -433,10 +433,13 @@ Every session saved to `logs/session_YYYYMMDD_HHMMSS.jsonl`:
 - [x] Step-based spatial tracking for noise elimination
 - [ ] GPU acceleration (CUDA)
 
-## Author
+## Authors
 
-**Author:** Paavan Siri Vardhan Narava
+**Name:** Paavan Siri Vardhan Narava  
 **Email:** naravapaavansirivardhan@gmail.com
+
+**Name:** Madhav Mandalreddy   
+**Email:** madhavmandalreddy8881@gmail.com
  
 ---
 
